@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "manifest_version": "1.0.0",
+  "repository": "nalaro/pixel-studio-models",
+  "updated_at": "2026-10-12T12:00:00Z",
+  "models": [
+    {
+      "id": "birefnet-general-lite",
+      "name": "BiRefNet General Lite",
+      "task": "background_removal",
+      "version": "1.0.0",
+      "revision": "e9b5f8a1c7204dbdf23a597a7a3b3780517865f1",
+      "filename": "birefnet_general_lite_quant.onnx",
+      "download_url": "https://huggingface.co/nalaro/pixel-studio-models/resolve/e9b5f8a1c7204dbdf23a597a7a3b3780517865f1/birefnet_general_lite_quant.onnx",
+      "size_bytes": 45180416,
+      "sha256": "3a52f970d4f3b7d1e8c92a6b8e3a4f5d6c7b8a9e0f1a2b3c4d5e6f7a8b9c0d1e",
+      "min_app_version_code": 1,
+      "ram_requirement_mb": 1024,
+      "runtime_compatibility": ["cpu", "nnapi"],
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/nalaro/pixel-studio-models/blob/main/LICENSE",
+      "input_resolution": [1024, 1024],
+      "is_recommended": true,
+      "description": "Quantized INT8 high-speed general background removal for mobile portraits, objects, and products."
+    },
+    {
+      "id": "u2net-precision-matting",
+      "name": "U2Net Precision Matting",
+      "task": "background_removal",
+      "version": "1.0.0",
+      "revision": "4c3b2a1e0f9d8c7b6a5e4d3c2b1a0f9e8d7c6b5a",
+      "filename": "u2net_cloth_matting_quant.onnx",
+      "download_url": "https://huggingface.co/nalaro/pixel-studio-models/resolve/4c3b2a1e0f9d8c7b6a5e4d3c2b1a0f9e8d7c6b5a/u2net_cloth_matting_quant.onnx",
+      "size_bytes": 78920192,
+      "sha256": "8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5e4d3c2b1a0f9e8d7c",
+      "min_app_version_code": 1,
+      "ram_requirement_mb": 1536,
+      "runtime_compatibility": ["cpu", "nnapi"],
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/nalaro/pixel-studio-models/blob/main/LICENSE",
+      "input_resolution": [1024, 1024],
+      "is_recommended": false,
+      "description": "Fine-detail edge matting for hair, glass, transparent fabrics, and complex silhouettes."
+    }
+  ]
+}
