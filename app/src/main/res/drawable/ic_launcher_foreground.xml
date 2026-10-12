@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center rounded square badge in vibrant signature accent #FF6A3D -->
+    <path
+        android:fillColor="#FF6A3D"
+        android:pathData="M34,26 h40 c4.4,0 8,3.6 8,8 v40 c0,4.4 -3.6,8 -8,8 h-40 c-4.4,0 -8,-3.6 -8,-8 v-40 c0,-4.4 3.6,-8 8,-8 z" />
+    <!-- Studio Aperture / Cutout Inner Star -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,34 L57,48 L71,51 L57,54 L54,68 L51,54 L37,51 L51,48 Z" />
+    <!-- Magic Pixel Sparkles -->
+    <path
+        android:fillColor="#FFF0EB"
+        android:pathData="M66,36 L67.5,41 L72.5,42.5 L67.5,44 L66,49 L64.5,44 L59.5,42.5 L64.5,41 Z" />
+    <path
+        android:fillColor="#FFF0EB"
+        android:pathData="M42,60 L43,63.5 L46.5,64.5 L43,65.5 L42,69 L41,65.5 L37.5,64.5 L41,63.5 Z" />
+</vector>
