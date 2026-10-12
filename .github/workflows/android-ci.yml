@@ -7,9 +7,12 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build & Test Android APK
+    name: Build & Release Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -35,9 +38,51 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload Debug APK Artifact
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Organize Built APKs
+        run: |
+          mkdir -p build-artifacts
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk build-artifacts/nalaro-pixel-studio-v1.0.0-release.apk
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/nalaro-pixel-studio-v1.0.0-release.apk
+          fi
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/nalaro-pixel-studio-v1.0.0-debug.apk
+          fi
+          ls -la build-artifacts/
+
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nalaro-pixel-studio-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: nalaro-pixel-studio-apks
+          path: build-artifacts/*.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "Nalaro Pixel Studio v1.0.0"
+          body: |
+            ## Nalaro Pixel Studio v1.0.0 🎉
+
+            Official Android application release for **Nalaro Pixel Studio** — AI-powered On-Device Background Removal & Precision Image Optimization.
+
+            ### 📱 Download & Install:
+            - **`nalaro-pixel-studio-v1.0.0-release.apk`** *(Recommended)*: Production build with ProGuard/R8 code optimization and resource shrinking. Pre-signed with debug key for immediate, frictionless installation on Android devices (Android 8.0+ / API 26-35).
+            - **`nalaro-pixel-studio-v1.0.0-debug.apk`**: Debug build with active logging.
+
+            ### ✨ Key Features:
+            - **AI Background Removal**: Real-time segmentation via ONNX Runtime Mobile (BiRefNet Lite & RMBG 1.4).
+            - **Studio Canvas**: Custom solid, linear gradient, transparent, or gallery backdrop replacement.
+            - **Smart Optimizer**: Multi-format converter (JPEG, WebP, PNG) with target file-size compression & SSIM quality guard.
+            - **Batch Processor**: Process multiple assets in bulk with unified export settings.
+            - **100% Offline & Private**: Zero cloud dependency; all models and processing run strictly on your device.
+          files: build-artifacts/*.apk
+          draft: false
+          prerelease: false
+        continue-on-error: true
