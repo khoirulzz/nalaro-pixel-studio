@@ -36,21 +36,18 @@ class MainActivity : ComponentActivity() {
 
         val repository = ModelRepository.getInstance(applicationContext)
 
-        // Read incoming image Uri(s) from Android Sharesheet if present
-        val sharedImageUri: Uri? = when {
-            intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true -> {
-                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            }
-            intent?.action == Intent.ACTION_SEND_MULTIPLE && intent.type?.startsWith("image/") == true -> {
-                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
-            }
-            else -> null
-        }
+        val initialSingleSharedUri: Uri? = if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
+            IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+        } else null
 
-        val initialStartDestination = if (sharedImageUri != null) {
-            Screen.Studio.route
-        } else {
-            Screen.Home.route
+        val initialBatchSharedUris: List<Uri> = if (intent?.action == Intent.ACTION_SEND_MULTIPLE && intent.type?.startsWith("image/") == true) {
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java) ?: emptyList()
+        } else emptyList()
+
+        val initialStartDestination = when {
+            initialBatchSharedUris.isNotEmpty() -> Screen.Batch.route
+            initialSingleSharedUri != null -> Screen.Studio.route
+            else -> Screen.Home.route
         }
 
         setContent {
@@ -59,11 +56,19 @@ class MainActivity : ComponentActivity() {
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = currentBackStackEntry?.destination?.route
 
+                var studioPendingUri by remember { mutableStateOf<Uri?>(initialSingleSharedUri) }
+                var batchPendingUris by remember { mutableStateOf<List<Uri>>(initialBatchSharedUris) }
+
                 var selectedTab by remember {
-                    mutableStateOf(if (sharedImageUri != null) AppTab.STUDIO else AppTab.HOME)
+                    mutableStateOf(
+                        when {
+                            initialBatchSharedUris.isNotEmpty() -> AppTab.BATCH
+                            initialSingleSharedUri != null -> AppTab.STUDIO
+                            else -> AppTab.HOME
+                        }
+                    )
                 }
 
-                // Synchronize tab with route
                 LaunchedEffect(currentRoute) {
                     when {
                         currentRoute == Screen.Home.route -> selectedTab = AppTab.HOME
@@ -92,7 +97,7 @@ class MainActivity : ComponentActivity() {
                                     selectedTab = tab
                                     val targetRoute = when (tab) {
                                         AppTab.HOME -> Screen.Home.route
-                                        AppTab.STUDIO -> Screen.Studio.createRoute("compress")
+                                        AppTab.STUDIO -> Screen.Studio.createRoute("remove_bg")
                                         AppTab.BATCH -> Screen.Batch.route
                                         AppTab.LIBRARY -> Screen.Library.route
                                     }
@@ -122,8 +127,24 @@ class MainActivity : ComponentActivity() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onNavigateToBatch = {
+                                    navController.navigate(Screen.Batch.route) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onNavigateToLibrary = {
+                                    navController.navigate(Screen.Library.route) {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onNavigateToModelManager = {
                                     navController.navigate(Screen.ModelManager.route) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenImageInStudio = { uri ->
+                                    studioPendingUri = uri
+                                    navController.navigate(Screen.Studio.createRoute("remove_bg")) {
                                         launchSingleTop = true
                                     }
                                 }
@@ -135,27 +156,45 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(
                                 navArgument("tool") {
                                     type = NavType.StringType
-                                    defaultValue = "compress"
+                                    defaultValue = "remove_bg"
                                 }
                             )
                         ) { backStackEntry ->
-                            val tool = backStackEntry.arguments?.getString("tool") ?: "compress"
+                            val tool = backStackEntry.arguments?.getString("tool") ?: "remove_bg"
                             StudioScreen(
                                 initialTool = tool,
-                                initialImageUri = sharedImageUri,
+                                initialImageUri = studioPendingUri,
                                 modelRepository = repository,
-                                onNavigateBack = navigateBackSafely
+                                onNavigateBack = navigateBackSafely,
+                                onNavigateToModelManager = {
+                                    navController.navigate(Screen.ModelManager.route) {
+                                        launchSingleTop = true
+                                    }
+                                }
                             )
                         }
 
                         composable(Screen.Batch.route) {
                             BatchScreen(
+                                initialUris = batchPendingUris,
                                 onNavigateBack = navigateBackSafely
                             )
                         }
 
                         composable(Screen.Library.route) {
-                            LibraryScreen()
+                            LibraryScreen(
+                                onOpenInStudio = { uri ->
+                                    studioPendingUri = uri
+                                    navController.navigate(Screen.Studio.createRoute("remove_bg")) {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onNavigateToStudio = {
+                                    navController.navigate(Screen.Studio.createRoute("remove_bg")) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            )
                         }
 
                         composable(Screen.ModelManager.route) {

@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.exifinterface)
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
@@ -96,8 +97,10 @@ dependencies {
     implementation(libs.moshi.kotlin)
     ksp(libs.moshi.kotlin.codegen)
 
-    // ONNX Runtime Mobile for on-device AI inference
+    // ONNX Runtime Mobile & Built-in Lightweight Offline Segmentation (<5MB)
     implementation(libs.onnxruntime.android)
+    implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.mlkit.selfie.segmentation)
 
     // Image loading
     implementation(libs.coil.compose)

@@ -7,9 +7,15 @@
 -keep class kotlin.reflect.** { *; }
 -dontwarn kotlin.reflect.**
 
-# ONNX Runtime rules
+# ONNX Runtime & ML Kit On-Device Segmentation rules
 -keep class ai.onnxruntime.** { *; }
 -dontwarn ai.onnxruntime.**
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.** { *; }
+-keep class com.google.android.odml.** { *; }
+-dontwarn com.google.mlkit.**
+-dontwarn com.google.android.gms.**
+-dontwarn com.google.android.odml.**
 
 # Retrofit & OkHttp (R8 Full Mode safe rules)
 -dontwarn okio.**

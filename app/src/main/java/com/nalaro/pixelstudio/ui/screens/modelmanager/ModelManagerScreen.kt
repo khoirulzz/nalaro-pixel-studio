@@ -20,8 +20,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nalaro.pixelstudio.data.models.ModelEntity
 import com.nalaro.pixelstudio.data.repository.ModelRepository
+import com.nalaro.pixelstudio.ui.components.AlertKind
 import com.nalaro.pixelstudio.ui.components.ModelCard
+import com.nalaro.pixelstudio.ui.components.StatusAlertBanner
 import com.nalaro.pixelstudio.ui.components.TopAppBarCompact
+import com.nalaro.pixelstudio.ui.components.UiAlert
 import com.nalaro.pixelstudio.ui.components.formatFileSize
 import com.nalaro.pixelstudio.ui.theme.*
 import kotlinx.coroutines.launch
@@ -39,7 +42,7 @@ fun ModelManagerScreen(
 
     var modelToDownload by remember { mutableStateOf<ModelEntity?>(null) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
-    var updateCheckMessage by remember { mutableStateOf<String?>(null) }
+    var currentAlert by remember { mutableStateOf<UiAlert?>(null) }
 
     val totalStorageUsed = remember(models) {
         repository.getTotalStorageUsedBytes()
@@ -51,7 +54,7 @@ fun ModelManagerScreen(
                 title = "AI Model Manager",
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Default.ChevronLeft, contentDescription = "Kembali", tint = TextPrimary, modifier = Modifier.size(28.dp))
                     }
                 },
                 actions = {
@@ -61,13 +64,25 @@ fun ModelManagerScreen(
                                 isCheckingUpdates = true
                                 val hasUpdates = repository.checkForUpdates(force = true)
                                 isCheckingUpdates = false
-                                updateCheckMessage = if (hasUpdates) "Manifest checked: Updated!" else "Already up to date."
+                                currentAlert = if (hasUpdates) {
+                                    UiAlert(
+                                        kind = AlertKind.SUCCESS,
+                                        title = "Manifest model diperbarui",
+                                        message = "Daftar model ONNX terbaru berhasil disinkronkan."
+                                    )
+                                } else {
+                                    UiAlert(
+                                        kind = AlertKind.INFO,
+                                        title = "Daftar model sudah terbaru",
+                                        message = "Semua definisi model sudah berada pada revisi terkini."
+                                    )
+                                }
                             }
                         }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Check for updates",
+                            contentDescription = "Periksa pembaruan",
                             tint = if (isCheckingUpdates) AccentPrimary else TextPrimary
                         )
                     }
@@ -84,9 +99,78 @@ fun ModelManagerScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (currentAlert != null) {
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    StatusAlertBanner(
+                        alert = currentAlert,
+                        onDismiss = { currentAlert = null }
+                    )
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(4.dp))
-                // Hugging Face Distribution Header Card
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, SemanticSuccess.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(SemanticSuccess.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SemanticSuccess, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Built-in Offline AI Engine",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "On-Device Subject Segmenter + Smart Matting (<5 MB)",
+                                        fontSize = 11.sp,
+                                        color = SemanticSuccess,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Aktif",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SemanticSuccess,
+                                modifier = Modifier
+                                    .background(SemanticSuccess.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Sudah terpasang langsung di dalam aplikasi dan siap menghapus background foto orang, produk, maupun objek secara offline tanpa perlu mengunduh model besar.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+
+            item {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
@@ -107,7 +191,7 @@ fun ModelManagerScreen(
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Hugging Face Hub Distribution",
+                                text = "Model ONNX Tambahan (Opsional)",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
@@ -115,7 +199,7 @@ fun ModelManagerScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Models are quantized INT8 ONNX binaries hosted on immutable commit revisions. Downloaded models are stored in private internal storage and operate 100% offline.",
+                            text = "Model ONNX terkuantisasi INT8 dari Hugging Face Hub untuk kebutuhan tingkat lanjut. Berjalan 100% lokal setelah diunduh.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -124,7 +208,6 @@ fun ModelManagerScreen(
                         HorizontalDivider(color = LineDivider)
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Storage & Wi-Fi row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -132,7 +215,7 @@ fun ModelManagerScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Model Storage Usage",
+                                    text = "Penyimpanan Model ONNX",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = TextMuted
                                 )
@@ -146,7 +229,7 @@ fun ModelManagerScreen(
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Wi-Fi Only",
+                                    text = "Hanya Wi-Fi",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = TextSecondary
                                 )
@@ -156,6 +239,11 @@ fun ModelManagerScreen(
                                     onCheckedChange = { checked ->
                                         coroutineScope.launch {
                                             repository.setWifiOnly(checked)
+                                            currentAlert = UiAlert(
+                                                kind = AlertKind.INFO,
+                                                title = if (checked) "Mode Wi-Fi Only diaktifkan" else "Unduhan jaringan seluler diizinkan",
+                                                message = if (checked) "Model hanya akan diunduh saat terhubung ke Wi-Fi." else "Model dapat diunduh melalui Wi-Fi maupun data seluler."
+                                            )
                                         }
                                     },
                                     colors = SwitchDefaults.colors(
@@ -171,20 +259,9 @@ fun ModelManagerScreen(
                 }
             }
 
-            if (updateCheckMessage != null) {
-                item {
-                    Text(
-                        text = updateCheckMessage!!,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SemanticSuccess,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-                }
-            }
-
             item {
                 Text(
-                    text = "Available Models (${models.size})",
+                    text = "Model ONNX Tersedia (${models.size})",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = TextPrimary
                 )
@@ -197,6 +274,11 @@ fun ModelManagerScreen(
                     onSelect = {
                         coroutineScope.launch {
                             repository.setSelectedModel(model.id)
+                            currentAlert = UiAlert(
+                                kind = AlertKind.SUCCESS,
+                                title = "Model aktif dipilih",
+                                message = "'${model.name}' ditetapkan sebagai model ONNX utama."
+                            )
                         }
                     },
                     onDownload = {
@@ -205,6 +287,11 @@ fun ModelManagerScreen(
                     onDelete = {
                         coroutineScope.launch {
                             repository.deleteModel(model.id)
+                            currentAlert = UiAlert(
+                                kind = AlertKind.INFO,
+                                title = "Model dihapus",
+                                message = "File '${model.name}' telah dihapus dari penyimpanan perangkat."
+                            )
                         }
                     }
                 )
@@ -216,23 +303,22 @@ fun ModelManagerScreen(
         }
     }
 
-    // User Confirmation Dialog
     if (modelToDownload != null) {
         val target = modelToDownload!!
         AlertDialog(
             onDismissRequest = { modelToDownload = null },
             title = {
-                Text(text = "Download Model?", color = TextPrimary, fontWeight = FontWeight.Bold)
+                Text(text = "Unduh Model ONNX?", color = TextPrimary, fontWeight = FontWeight.Bold)
             },
             text = {
                 Column {
                     Text(
-                        text = "Do you want to download \"${target.name}\" (${formatFileSize(target.sizeBytes)}) from Hugging Face Hub?",
+                        text = "Unduh \"${target.name}\" (${formatFileSize(target.sizeBytes)}) dari Hugging Face Hub?",
                         color = TextSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Commit revision: ${target.remoteRevision.take(12)}\nLicense: ${target.license}\nNetwork: ${if (isWifiOnly) "Wi-Fi Only" else "Any Network"}",
+                        text = "Revisi commit: ${target.remoteRevision.take(12)}\nLisensi: ${target.license}\nJaringan: ${if (isWifiOnly) "Hanya Wi-Fi" else "Semua Jaringan"}",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextMuted
                     )
@@ -243,17 +329,22 @@ fun ModelManagerScreen(
                     onClick = {
                         coroutineScope.launch {
                             repository.enqueueDownload(target.id)
+                            currentAlert = UiAlert(
+                                kind = AlertKind.INFO,
+                                title = "Unduhan '${target.name}' dimulai",
+                                message = "Proses pengunduhan berjalan di latar belakang."
+                            )
                         }
                         modelToDownload = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary)
                 ) {
-                    Text("Download", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Unduh", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { modelToDownload = null }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Batal", color = TextSecondary)
                 }
             },
             containerColor = SurfaceRaised,

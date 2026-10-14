@@ -6,9 +6,11 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,19 +25,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nalaro.pixelstudio.core.ai.BitmapUtils
 import com.nalaro.pixelstudio.core.ai.BrushMode
+import com.nalaro.pixelstudio.core.ai.EdgeRefinementMode
+import com.nalaro.pixelstudio.core.ai.MaskRefiner
 import com.nalaro.pixelstudio.core.ai.OnnxSegmentationEngine
 import com.nalaro.pixelstudio.core.compression.*
 import com.nalaro.pixelstudio.core.converter.FormatConverter
 import com.nalaro.pixelstudio.core.export.ExportManager
 import com.nalaro.pixelstudio.core.export.ExportRequest
-import com.nalaro.pixelstudio.core.studio.BackgroundStyle
 import com.nalaro.pixelstudio.core.studio.BackgroundStudioEngine
+import com.nalaro.pixelstudio.core.studio.BackgroundStyle
 import com.nalaro.pixelstudio.core.studio.SubjectShadow
 import com.nalaro.pixelstudio.data.models.ModelStatus
 import com.nalaro.pixelstudio.data.repository.ModelRepository
@@ -45,12 +51,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class StudioTool(val label: String) {
-    COMPRESS("Smart Compression"),
-    REMOVE_BG("AI Remove Background"),
-    BACKGROUND("Background Studio"),
-    CONVERT("Image Converter"),
-    EXPORT("Export Image")
+enum class StudioTool(val routeKey: String, val label: String, val shortLabel: String, val icon: ImageVector) {
+    COMPRESS("compress", "Smart Compression", "Compress", Icons.Outlined.Layers),
+    REMOVE_BG("remove_bg", "Remove Background", "Remove BG", Icons.Outlined.ContentCut),
+    BACKGROUND("background", "Background Studio", "Background", Icons.Outlined.Tonality),
+    CONVERT("convert", "Image Converter", "Convert", Icons.Outlined.SwapHoriz)
 }
 
 @Composable
@@ -59,10 +64,12 @@ fun StudioScreen(
     initialImageUri: Uri? = null,
     modelRepository: ModelRepository,
     onNavigateBack: () -> Unit,
+    onNavigateToModelManager: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     var activeTool by remember(initialTool) {
         mutableStateOf(
@@ -70,35 +77,43 @@ fun StudioScreen(
                 "remove_bg" -> StudioTool.REMOVE_BG
                 "background" -> StudioTool.BACKGROUND
                 "convert" -> StudioTool.CONVERT
-                "export" -> StudioTool.EXPORT
                 else -> StudioTool.COMPRESS
             }
         )
     }
 
-    // Observe installed AI models
     val allModels by modelRepository.allModels.collectAsState(initial = emptyList())
     val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
 
-    // Image State
+    // Production Image State (starts completely clean, no dummy/sample image)
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var imageDisplayName by remember { mutableStateOf("PRODUCT-HERO.PNG") }
-    var imageDimensionText by remember { mutableStateOf("2048 × 2048") }
-    var originalSizeBytes by remember { mutableLongStateOf(4820000L) } // 4.82 MB from mockups
+    var cutoutBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var customBgBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var imageDisplayName by remember { mutableStateOf("") }
+    var imageDimensionText by remember { mutableStateOf("") }
+    var originalSizeBytes by remember { mutableLongStateOf(0L) }
+    var processedBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var processedSizeBytes by remember { mutableLongStateOf(0L) }
+    var hasProcessedResult by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
-    var exportStatusMessage by remember { mutableStateOf<String?>(null) }
+    var showFullResultOnly by remember { mutableStateOf(false) }
 
-    // Compression State (mockup-02)
+    // Unified Alert Banner State
+    var currentAlert by remember { mutableStateOf<UiAlert?>(null) }
+
+    // Compression & Format State
     var compressionMode by remember { mutableStateOf(CompressionMode.SMART) }
     var selectedOutputFormat by remember { mutableStateOf(ImageFormat.WEBP) }
     var compressionResult by remember { mutableStateOf<CompressionResult?>(null) }
 
-    // AI Cutout State (mockup-03)
-    var isPrecisionModel by remember { mutableStateOf(false) }
+    // Remove BG & Brush State
+    var isPrecisionModel by remember { mutableStateOf(true) }
+    var edgeRefinementMode by remember { mutableStateOf(EdgeRefinementMode.NATURAL) }
     var activeBrushMode by remember { mutableStateOf(BrushMode.ERASE) }
-    var cutoutBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isBrushTouchEnabled by remember { mutableStateOf(false) }
     val segmentationEngine = remember { OnnxSegmentationEngine(context.applicationContext) }
+    val maskRefiner = remember { MaskRefiner() }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -106,12 +121,12 @@ fun StudioScreen(
         }
     }
 
-    // Background Studio State (mockup-04)
+    // Background Studio State
     val bgEngine = remember { BackgroundStudioEngine() }
     var selectedBgColor by remember { mutableIntStateOf(0xFFFF6A3D.toInt()) }
     var backgroundTab by remember { mutableStateOf("Solid") }
 
-    // Converter Options (mockup-05)
+    // Converter Options
     var preserveDimensions by remember { mutableStateOf(true) }
     var preserveTransparency by remember { mutableStateOf(true) }
     var removeGpsMetadata by remember { mutableStateOf(true) }
@@ -128,16 +143,30 @@ fun StudioScreen(
                 processedBitmap = asset.bitmap
                 cutoutBitmap = null
                 compressionResult = null
+                processedBytes = null
+                processedSizeBytes = 0L
+                hasProcessedResult = false
+                isBrushTouchEnabled = false
+                showFullResultOnly = false
                 imageDisplayName = asset.displayName
                 imageDimensionText = "${asset.originalWidth} × ${asset.originalHeight}"
                 originalSizeBytes = asset.sizeBytes
-                exportStatusMessage = null
+                currentAlert = UiAlert(
+                    kind = AlertKind.INFO,
+                    title = "Gambar siap diproses",
+                    message = "${asset.displayName} • ${asset.originalWidth}×${asset.originalHeight} (${formatFileSize(asset.sizeBytes)})"
+                )
+            } else {
+                currentAlert = UiAlert(
+                    kind = AlertKind.ERROR,
+                    title = "Gagal memuat gambar",
+                    message = "File gambar tidak dapat dibaca atau format tidak didukung."
+                )
             }
             isProcessing = false
         }
     }
 
-    // Photo Picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -146,30 +175,36 @@ fun StudioScreen(
         }
     }
 
-    // Initialize with incoming shared image Uri or default sample image
-    LaunchedEffect(initialImageUri) {
-        if (initialImageUri != null) {
-            loadUriIntoStudio(initialImageUri)
-        } else if (originalBitmap == null) {
-            val sample = withContext(Dispatchers.Default) {
-                val bmp = Bitmap.createBitmap(800, 800, Bitmap.Config.ARGB_8888)
-                val canvas = android.graphics.Canvas(bmp)
-                canvas.drawColor(android.graphics.Color.WHITE)
-                val paint = android.graphics.Paint().apply {
-                    color = android.graphics.Color.parseColor("#E8D7C3")
-                    isAntiAlias = true
+    val bgImagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val asset = withContext(Dispatchers.IO) {
+                    BitmapUtils.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
                 }
-                canvas.drawRoundRect(250f, 200f, 550f, 650f, 60f, 60f, paint)
-                bmp
+                if (asset != null) {
+                    customBgBitmap = asset.bitmap
+                    backgroundTab = "Image"
+                    currentAlert = UiAlert(
+                        kind = AlertKind.SUCCESS,
+                        title = "Gambar latar dimuat",
+                        message = "Latar kustom '${asset.displayName}' berhasil diterapkan."
+                    )
+                }
             }
-            originalBitmap = sample
-            processedBitmap = sample
         }
     }
 
-    // Offload Background Studio live preview compositing to Dispatchers.Default (avoids UI ANR/OOM on slider drag)
-    LaunchedEffect(activeTool, selectedBgColor, backgroundTab) {
-        if (activeTool == StudioTool.BACKGROUND) {
+    LaunchedEffect(initialImageUri) {
+        if (initialImageUri != null) {
+            loadUriIntoStudio(initialImageUri)
+        }
+    }
+
+    // Live Background Studio preview on Dispatchers.Default
+    LaunchedEffect(activeTool, selectedBgColor, backgroundTab, customBgBitmap, cutoutBitmap) {
+        if (activeTool == StudioTool.BACKGROUND && originalBitmap != null) {
             val subject = cutoutBitmap ?: originalBitmap ?: return@LaunchedEffect
             val composited = withContext(Dispatchers.Default) {
                 val style = when (backgroundTab) {
@@ -178,6 +213,14 @@ fun StudioScreen(
                         endColor = 0xFF111827.toInt(),
                         angleDegrees = 45f
                     )
+                    "Image" -> {
+                        val bgBmp = customBgBitmap
+                        if (bgBmp != null) {
+                            BackgroundStyle.Image(bgBmp)
+                        } else {
+                            BackgroundStyle.Solid(selectedBgColor)
+                        }
+                    }
                     else -> BackgroundStyle.Solid(selectedBgColor)
                 }
                 bgEngine.composite(
@@ -208,7 +251,12 @@ fun StudioScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable { onNavigateBack() }
                     ) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(28.dp))
+                        Icon(
+                            Icons.Default.ChevronLeft,
+                            contentDescription = "Kembali",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(28.dp)
+                        )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = activeTool.label,
@@ -218,25 +266,22 @@ fun StudioScreen(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = { photoPickerLauncher.launch("image/*") },
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(SurfaceRaised)
-                                .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddPhotoAlternate,
-                                contentDescription = "Pick image",
-                                tint = TextPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        if (activeTool != StudioTool.EXPORT) {
+                        if (originalBitmap != null) {
                             IconButton(
-                                onClick = { activeTool = StudioTool.EXPORT },
+                                onClick = {
+                                    originalBitmap = null
+                                    processedBitmap = null
+                                    cutoutBitmap = null
+                                    processedBytes = null
+                                    processedSizeBytes = 0L
+                                    hasProcessedResult = false
+                                    compressionResult = null
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.INFO,
+                                        title = "Kanvas dikosongkan",
+                                        message = "Silakan pilih gambar baru dari galeri untuk diproses."
+                                    )
+                                },
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
@@ -244,12 +289,83 @@ fun StudioScreen(
                                     .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.IosShare,
-                                    contentDescription = "Export",
-                                    tint = AccentPrimary,
+                                    imageVector = Icons.Outlined.DeleteSweep,
+                                    contentDescription = "Kosongkan kanvas",
+                                    tint = TextSecondary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+                        }
+
+                        Button(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceRaised),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .height(38.dp)
+                                .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Pilih Gambar",
+                                tint = AccentPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (originalBitmap == null) "Pilih Foto" else "Ganti Foto",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Quick Tool Switcher Bar (switch tools without losing current image/cutout)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StudioTool.values().forEach { tool ->
+                        val isSelected = activeTool == tool
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) AccentPrimary else SurfaceRaised)
+                                .border(
+                                    1.dp,
+                                    if (isSelected) AccentPrimary else LineDivider,
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable {
+                                    activeTool = tool
+                                    isBrushTouchEnabled = false
+                                    if (tool == StudioTool.REMOVE_BG) {
+                                        selectedOutputFormat = ImageFormat.PNG
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = tool.icon,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = tool.shortLabel,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else TextPrimary
+                            )
                         }
                     }
                 }
@@ -262,144 +378,479 @@ fun StudioScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
         ) {
-            // Screen Headline & Subtitle matching mockups
-            val (headline, subtitle) = when (activeTool) {
-                StudioTool.COMPRESS -> Pair("Make it lighter.", "Precision compression, pixel by pixel.")
-                StudioTool.REMOVE_BG -> Pair("Clean cutouts.", "Hair, edges and fine details — refined.")
-                StudioTool.BACKGROUND -> Pair("Set the scene.", "A perfect background, your exact color.")
-                StudioTool.CONVERT -> Pair("One image.\nAny format.", "A better workflow for modern images.")
-                StudioTool.EXPORT -> Pair("Ready to save.", "Your image, polished and optimized.")
+            // Status Alert Banner (Success / Error / Info)
+            if (currentAlert != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                StatusAlertBanner(
+                    alert = currentAlert,
+                    onDismiss = { currentAlert = null }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            } else {
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = headline,
-                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold, fontSize = 28.sp),
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                color = TextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Main Canvas Area (matching mockups with badges)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(280.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xFFE8D7C3))
-                    .border(1.dp, LineDivider, RoundedCornerShape(24.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                BeforeAfterSlider(
-                    originalBitmap = originalBitmap,
-                    processedBitmap = processedBitmap ?: originalBitmap,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Mockup Badges
-                Row(
+            // Main Canvas Area or Empty State
+            if (originalBitmap == null) {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .height(270.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .clickable { photoPickerLauncher.launch("image/*") }
+                        .border(1.5.dp, LineDivider, RoundedCornerShape(24.dp))
                 ) {
-                    val badgeLeft = when (activeTool) {
-                        StudioTool.COMPRESS -> "ORIGINAL"
-                        StudioTool.REMOVE_BG -> "CUTOUT PREVIEW"
-                        StudioTool.BACKGROUND -> "LIVE PREVIEW"
-                        else -> "PREVIEW"
-                    }
-                    Text(
-                        text = badgeLeft,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-
-                    if (activeTool == StudioTool.COMPRESS) {
-                        Text(
-                            text = "1:1 Preview",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    } else if (activeTool == StudioTool.EXPORT) {
-                        Text(
-                            text = "FINAL PREVIEW",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-
-                if (isProcessing) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.White.copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        CircularProgressIndicator(color = AccentPrimary)
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(AccentSoft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.AddPhotoAlternate,
+                                contentDescription = null,
+                                tint = AccentPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Pilih Gambar untuk Diproses",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            ),
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Ketuk di sini untuk memilih foto dari Galeri.\nSemua pemrosesan berjalan 100% lokal di perangkatmu.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Buka Galeri Foto", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(SurfaceRaised)
+                        .border(1.dp, LineDivider, RoundedCornerShape(24.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BeforeAfterSlider(
+                        originalBitmap = originalBitmap,
+                        processedBitmap = processedBitmap ?: originalBitmap,
+                        showFullProcessedOnly = showFullResultOnly || isBrushTouchEnabled,
+                        onCanvasTouch = if (activeTool == StudioTool.REMOVE_BG && isBrushTouchEnabled && cutoutBitmap != null) { normX, normY ->
+                            val orig = originalBitmap ?: return@BeforeAfterSlider
+                            val curr = processedBitmap ?: cutoutBitmap ?: return@BeforeAfterSlider
+                            val tx = normX * curr.width
+                            val ty = normY * curr.height
+                            val radius = (curr.width.coerceAtLeast(curr.height) * 0.045f).coerceAtLeast(14f)
+                            val updated = maskRefiner.applyBrush(
+                                currentBitmap = curr,
+                                originalBitmap = orig,
+                                touchX = tx,
+                                touchY = ty,
+                                brushRadius = radius,
+                                brushHardness = 0.6f,
+                                mode = activeBrushMode
+                            )
+                            cutoutBitmap = updated
+                            processedBitmap = updated
+                            hasProcessedResult = true
+                        } else null,
+                        modifier = Modifier.fillMaxSize()
+                    )
 
-            // File Info Row matching mockup-02: "PRODUCT-HERO.PNG" | "2048 × 2048"
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = imageDisplayName.uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    letterSpacing = 1.sp,
-                    color = TextMuted
-                )
-                Text(
-                    text = imageDimensionText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted
-                )
+                    // Top Overlay Badges (Preview Mode + View Mode Toggle)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val badgeLeft = when {
+                            hasProcessedResult -> "HASIL SIAP SIMPAN ✓"
+                            activeTool == StudioTool.REMOVE_BG -> "CUTOUT PREVIEW"
+                            activeTool == StudioTool.BACKGROUND -> "LIVE PREVIEW"
+                            else -> "PRATINJAU"
+                        }
+                        Text(
+                            text = badgeLeft,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = Color.White,
+                            modifier = Modifier
+                                .background(
+                                    if (hasProcessedResult) SemanticSuccess.copy(alpha = 0.9f)
+                                    else Color.Black.copy(alpha = 0.6f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+
+                        // Toggle between Split Compare vs Full Result
+                        Text(
+                            text = if (showFullResultOnly) "Mode: Hasil Penuh ⇄" else "Mode: Bandingkan ⇄",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.6f))
+                                .clickable { showFullResultOnly = !showFullResultOnly }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+
+                    if (isProcessing) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.White.copy(alpha = 0.72f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = AccentPrimary)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Memproses gambar...",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // File Info Row
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${imageDisplayName.uppercase()} (${formatFileSize(originalSizeBytes)})",
+                        style = MaterialTheme.typography.labelSmall,
+                        letterSpacing = 0.5.sp,
+                        color = TextMuted
+                    )
+                    Text(
+                        text = imageDimensionText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // UNIFIED RESULT & DIRECT SAVE PANEL (Appears directly on the same screen right after processing!)
+            if (hasProcessedResult && originalBitmap != null && processedBitmap != null) {
+                val estimatedOutBytes = when {
+                    processedSizeBytes > 0L -> processedSizeBytes
+                    compressionResult != null -> compressionResult!!.bestCandidate.sizeBytes
+                    else -> (originalSizeBytes * 0.45).toLong().coerceAtLeast(1024L)
+                }
+                val savingsPct = if (originalSizeBytes > 0 && estimatedOutBytes < originalSizeBytes) {
+                    ((1.0 - estimatedOutBytes.toDouble() / originalSizeBytes.toDouble()) * 100.0).toFloat()
+                } else 0f
+
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, SemanticSuccess.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = SemanticSuccess,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Hasil Pemrosesan Siap Disimpan",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "${formatFileSize(originalSizeBytes)} ➔ ${formatFileSize(estimatedOutBytes)} • Format ${selectedOutputFormat.name}",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                            }
+
+                            if (savingsPct > 0f) {
+                                Text(
+                                    text = "-${"%.1f".format(savingsPct)}%",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SemanticSuccess,
+                                    modifier = Modifier
+                                        .background(SemanticSuccess.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            } else if (selectedOutputFormat != ImageFormat.JPEG) {
+                                Text(
+                                    text = "Transparan",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentPrimary,
+                                    modifier = Modifier
+                                        .background(AccentSoft, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Inline Format Selector right in the Save panel
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Format simpan:",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ImageFormat.values().forEach { fmt ->
+                                    val selected = selectedOutputFormat == fmt
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (selected) AccentPrimary else SurfaceSubtle)
+                                            .clickable { selectedOutputFormat = fmt }
+                                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    ) {
+                                        Text(
+                                            text = fmt.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selected) Color.White else TextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Shortcut to add solid/gradient/photo background right after Remove BG
+                        if (activeTool == StudioTool.REMOVE_BG && cutoutBitmap != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(AccentSoft)
+                                    .clickable { activeTool = StudioTool.BACKGROUND }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Ingin memberi warna atau foto latar baru?",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Ganti Background →",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentPrimary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Direct Save & Share Buttons on the Same Screen
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val toExport = processedBitmap ?: return@launch
+                                        isProcessing = true
+                                        try {
+                                            val exportManager = ExportManager(context)
+                                            val bytes = withContext(Dispatchers.Default) {
+                                                val cached = processedBytes
+                                                if (cached != null && compressionResult?.bestCandidate?.format == selectedOutputFormat) {
+                                                    cached
+                                                } else {
+                                                    val quality = if (selectedOutputFormat == ImageFormat.PNG) 100 else 90
+                                                    FormatConverter().convert(toExport, selectedOutputFormat, quality = quality).outputBytes
+                                                }
+                                            }
+                                            val baseName = imageDisplayName.substringBeforeLast('.').ifBlank { "Nalaro" }
+                                            val result = exportManager.exportToPictures(
+                                                ExportRequest(
+                                                    data = bytes,
+                                                    format = selectedOutputFormat,
+                                                    suggestedName = "${baseName}_${System.currentTimeMillis()}"
+                                                )
+                                            )
+                                            if (result.isSuccess) {
+                                                processedSizeBytes = result.bytesWritten
+                                                currentAlert = UiAlert(
+                                                    kind = AlertKind.SUCCESS,
+                                                    title = "Berhasil disimpan ke Galeri!",
+                                                    message = "Lokasi: ${result.absolutePath ?: "Pictures/PixelStudio"} (${formatFileSize(result.bytesWritten)})"
+                                                )
+                                            } else {
+                                                currentAlert = UiAlert(
+                                                    kind = AlertKind.ERROR,
+                                                    title = "Gagal menyimpan gambar",
+                                                    message = result.errorMessage ?: "Periksa izin penyimpanan perangkat."
+                                                )
+                                            }
+                                        } catch (t: Throwable) {
+                                            currentAlert = UiAlert(
+                                                kind = AlertKind.ERROR,
+                                                title = "Gagal menyimpan gambar",
+                                                message = t.localizedMessage ?: "Terjadi kesalahan saat menyimpan."
+                                            )
+                                        } finally {
+                                            isProcessing = false
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = SemanticSuccess),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1.35f)
+                                    .height(50.dp)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Simpan ke Galeri", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val toExport = processedBitmap ?: return@launch
+                                        isProcessing = true
+                                        try {
+                                            val exportManager = ExportManager(context)
+                                            val bytes = withContext(Dispatchers.Default) {
+                                                FormatConverter().convert(toExport, selectedOutputFormat, quality = 90).outputBytes
+                                            }
+                                            val baseName = imageDisplayName.substringBeforeLast('.').ifBlank { "Nalaro" }
+                                            val result = exportManager.exportToPictures(
+                                                ExportRequest(
+                                                    data = bytes,
+                                                    format = selectedOutputFormat,
+                                                    suggestedName = "${baseName}_Share_${System.currentTimeMillis()}"
+                                                )
+                                            )
+                                            if (result.isSuccess && result.uri != null) {
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = selectedOutputFormat.mimeType
+                                                    putExtra(Intent.EXTRA_STREAM, result.uri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "Bagikan gambar"))
+                                            } else {
+                                                currentAlert = UiAlert(
+                                                    kind = AlertKind.ERROR,
+                                                    title = "Gagal menyiapkan file bagikan",
+                                                    message = result.errorMessage ?: "Tidak dapat membuat file sementara."
+                                                )
+                                            }
+                                        } catch (t: Throwable) {
+                                            currentAlert = UiAlert(
+                                                kind = AlertKind.ERROR,
+                                                title = "Gagal membagikan gambar",
+                                                message = t.localizedMessage ?: "Terjadi kesalahan."
+                                            )
+                                        } finally {
+                                            isProcessing = false
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, LineDivider),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Bagikan", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             // Tool-Specific Control Panel
             when (activeTool) {
-                // S02: SMART COMPRESSION (mockup-02)
+                // S02: SMART COMPRESSION
                 StudioTool.COMPRESS -> {
-                    ImageMetricsCard(
-                        originalBytes = originalSizeBytes,
-                        resultBytes = compressionResult?.bestCandidate?.sizeBytes ?: (originalSizeBytes * 0.284).toLong(),
-                        savingsPct = compressionResult?.bestCandidate?.savingsPct ?: 71.6f,
-                        formatName = selectedOutputFormat.extension.uppercase()
-                    )
+                    if (originalBitmap != null) {
+                        ImageMetricsCard(
+                            originalBytes = originalSizeBytes,
+                            resultBytes = compressionResult?.bestCandidate?.sizeBytes
+                                ?: (originalSizeBytes * 0.32).toLong(),
+                            savingsPct = compressionResult?.bestCandidate?.savingsPct ?: 68.0f,
+                            formatName = selectedOutputFormat.extension.uppercase()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Segmented Pills: Lossless | ✦ Smart | Maximum
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -409,10 +860,10 @@ fun StudioScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         listOf(
-                            Triple(CompressionMode.LOSSLESS, "Lossless", null),
-                            Triple(CompressionMode.SMART, "✦ Smart", null),
-                            Triple(CompressionMode.MAXIMUM, "Maximum", null)
-                        ).forEach { (mode, label, _) ->
+                            Pair(CompressionMode.LOSSLESS, "Lossless"),
+                            Pair(CompressionMode.SMART, "✦ Smart"),
+                            Pair(CompressionMode.MAXIMUM, "Maximum")
+                        ).forEach { (mode, label) ->
                             val isSelected = compressionMode == mode
                             Box(
                                 modifier = Modifier
@@ -433,54 +884,82 @@ fun StudioScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Output Format row: Output format | WebP ▼
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "Output format", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    selectedOutputFormat = when (selectedOutputFormat) {
-                                        ImageFormat.WEBP -> ImageFormat.JPEG
-                                        ImageFormat.JPEG -> ImageFormat.PNG
-                                        ImageFormat.PNG -> ImageFormat.WEBP
-                                    }
+                        Text(text = "Format output", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ImageFormat.values().forEach { fmt ->
+                                val selected = selectedOutputFormat == fmt
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (selected) AccentSoft else SurfaceRaised)
+                                        .border(1.dp, if (selected) AccentPrimary else LineDivider, RoundedCornerShape(8.dp))
+                                        .clickable { selectedOutputFormat = fmt }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = fmt.name,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) AccentPrimary else TextSecondary
+                                    )
                                 }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(text = "${selectedOutputFormat.name} ▼", fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                    // Primary Button: Compress image ↗
                     Button(
                         onClick = {
+                            val bmp = originalBitmap
+                            if (bmp == null) {
+                                photoPickerLauncher.launch("image/*")
+                                return@Button
+                            }
                             coroutineScope.launch {
-                                val bmp = originalBitmap ?: return@launch
                                 isProcessing = true
                                 try {
                                     val engine = SmartCompressionEngine()
                                     val result = engine.compress(bmp, originalSizeBytes, compressionMode, selectedOutputFormat)
                                     compressionResult = result
+                                    processedBytes = result.bestCandidate.encodedBytes
+                                    processedSizeBytes = result.bestCandidate.sizeBytes
+                                    selectedOutputFormat = result.bestCandidate.format
                                     val decoded = withContext(Dispatchers.Default) {
                                         BitmapFactory.decodeByteArray(
-                                            result.bestCandidate.encodedBytes, 0, result.bestCandidate.encodedBytes.size
+                                            result.bestCandidate.encodedBytes,
+                                            0,
+                                            result.bestCandidate.encodedBytes.size
                                         )
                                     }
                                     if (decoded != null) {
                                         processedBitmap = decoded
+                                        hasProcessedResult = true
+                                        currentAlert = UiAlert(
+                                            kind = AlertKind.SUCCESS,
+                                            title = "Kompresi berhasil!",
+                                            message = "Ukuran berkurang ${"%.1f".format(result.bestCandidate.savingsPct)}% (${formatFileSize(originalSizeBytes)} ➔ ${formatFileSize(result.bestCandidate.sizeBytes)}) dalam ${result.processingTimeMs} ms."
+                                        )
+                                    } else {
+                                        currentAlert = UiAlert(
+                                            kind = AlertKind.ERROR,
+                                            title = "Gagal mendecode hasil kompresi",
+                                            message = "Silakan coba format output lainnya."
+                                        )
                                     }
                                 } catch (t: Throwable) {
-                                    t.printStackTrace()
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.ERROR,
+                                        title = "Kompresi gagal diproses",
+                                        message = t.localizedMessage ?: "Terjadi kesalahan saat mengompres gambar."
+                                    )
                                 } finally {
                                     isProcessing = false
                                 }
@@ -492,11 +971,16 @@ fun StudioScreen(
                             .fillMaxWidth()
                             .height(54.dp)
                     ) {
-                        Text("Compress image ↗", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (originalBitmap == null) "Pilih Gambar & Kompres ↗" else "Proses Kompresi ↗",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                // S03: AI REMOVE BACKGROUND (mockup-03)
+                // S03: AI REMOVE BACKGROUND
                 StudioTool.REMOVE_BG -> {
                     val targetModelId = if (isPrecisionModel) "u2net-precision-matting" else selectedModelId
                     val activeModel = allModels.firstOrNull { it.id == targetModelId }
@@ -508,17 +992,32 @@ fun StudioScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "Processing quality", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Column {
+                            Text(text = "Engine penghapus latar", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text(
+                                text = if (isModelInstalled) {
+                                    "ONNX Aktif (${activeModel?.name})"
+                                } else {
+                                    "On-Device AI + Smart Matting (Aktif tanpa kuota)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SemanticSuccess
+                            )
+                        }
                         Text(
-                            text = if (isModelInstalled) "Model installed ✓" else "Built-in fallback ready",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isModelInstalled) SemanticSuccess else TextSecondary
+                            text = "Kelola Model ↗",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentPrimary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onNavigateToModelManager() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Segmented: ⚡ Fast | ✧ Precision
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -536,7 +1035,7 @@ fun StudioScreen(
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("⚡ Fast", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("⚡ Cepat", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
                         }
                         Box(
                             modifier = Modifier
@@ -547,73 +1046,147 @@ fun StudioScreen(
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✧ Precision", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("✧ Presisi Tinggi", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // 3 Tool buttons: Erase, Restore, Refine matching mockup-03
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        listOf(
-                            Triple(BrushMode.ERASE, "Erase", Icons.Outlined.ContentCut),
-                            Triple(BrushMode.RESTORE, "Restore", Icons.Outlined.Edit),
-                            Triple(BrushMode.REFINE, "Refine", Icons.Outlined.BlurCircular)
-                        ).forEach { (mode, label, icon) ->
-                            val isSelected = activeBrushMode == mode
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = if (isSelected) AccentSoft else SurfaceRaised),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { activeBrushMode = mode }
-                                    .border(1.dp, if (isSelected) AccentPrimary else LineDivider, RoundedCornerShape(16.dp))
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 14.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(imageVector = icon, contentDescription = null, tint = if (isSelected) AccentPrimary else TextPrimary, modifier = Modifier.size(22.dp))
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(text = label, fontSize = 12.sp, color = if (isSelected) AccentPrimary else TextSecondary)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "Edge refinement", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        Text(text = "Natural ▼", fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text(text = "Kehalusan tepi (Edge)", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            EdgeRefinementMode.values().forEach { mode ->
+                                val selected = edgeRefinementMode == mode
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (selected) AccentSoft else SurfaceRaised)
+                                        .border(1.dp, if (selected) AccentPrimary else LineDivider, RoundedCornerShape(8.dp))
+                                        .clickable { edgeRefinementMode = mode }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = mode.label,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) AccentPrimary else TextSecondary
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    if (cutoutBitmap != null) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Kuas perapi manual",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isBrushTouchEnabled) AccentPrimary else SurfaceSubtle)
+                                    .clickable { isBrushTouchEnabled = !isBrushTouchEnabled }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = if (isBrushTouchEnabled) "Kuas Aktif ✓" else "Aktifkan Kuas",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isBrushTouchEnabled) Color.White else TextSecondary
+                                )
+                            }
+                        }
+
+                        if (isBrushTouchEnabled) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                listOf(
+                                    Triple(BrushMode.ERASE, "Hapus", Icons.Outlined.ContentCut),
+                                    Triple(BrushMode.RESTORE, "Pulihkan", Icons.Outlined.Edit),
+                                    Triple(BrushMode.REFINE, "Tajamkan", Icons.Outlined.BlurCircular)
+                                ).forEach { (mode, label, icon) ->
+                                    val isSelected = activeBrushMode == mode
+                                    Card(
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = if (isSelected) AccentSoft else SurfaceRaised),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { activeBrushMode = mode }
+                                            .border(1.dp, if (isSelected) AccentPrimary else LineDivider, RoundedCornerShape(14.dp))
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 10.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(imageVector = icon, contentDescription = null, tint = if (isSelected) AccentPrimary else TextPrimary, modifier = Modifier.size(20.dp))
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isSelected) AccentPrimary else TextSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     Button(
                         onClick = {
+                            val bmp = originalBitmap
+                            if (bmp == null) {
+                                photoPickerLauncher.launch("image/*")
+                                return@Button
+                            }
                             coroutineScope.launch {
-                                val bmp = originalBitmap ?: return@launch
                                 isProcessing = true
                                 try {
                                     val modelPath = activeModel?.localFilePath
                                     if (!modelPath.isNullOrBlank()) {
                                         segmentationEngine.loadModel(modelPath)
                                     }
-                                    val cutout = segmentationEngine.segmentBackground(bmp)
-                                    cutoutBitmap = cutout
-                                    processedBitmap = cutout
+                                    val outcome = segmentationEngine.segmentBackgroundDetailed(
+                                        sourceBitmap = bmp,
+                                        edgeMode = edgeRefinementMode,
+                                        highPrecision = isPrecisionModel
+                                    )
+                                    cutoutBitmap = outcome.bitmap
+                                    processedBitmap = outcome.bitmap
+                                    selectedOutputFormat = ImageFormat.PNG
+                                    val encodedPng = withContext(Dispatchers.Default) {
+                                        FormatConverter().convert(outcome.bitmap, ImageFormat.PNG, quality = 100).outputBytes
+                                    }
+                                    processedBytes = encodedPng
+                                    processedSizeBytes = encodedPng.size.toLong()
+                                    hasProcessedResult = true
+                                    showFullResultOnly = true
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.SUCCESS,
+                                        title = "Background berhasil dihapus!",
+                                        message = "Diproses dengan ${outcome.engineLabel} (${outcome.elapsedMs} ms). Hasil langsung siap disimpan di atas."
+                                    )
                                 } catch (t: Throwable) {
-                                    t.printStackTrace()
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.ERROR,
+                                        title = "Gagal menghapus background",
+                                        message = t.localizedMessage ?: "Terjadi kesalahan saat memproses gambar."
+                                    )
                                 } finally {
                                     isProcessing = false
                                 }
@@ -625,13 +1198,17 @@ fun StudioScreen(
                             .fillMaxWidth()
                             .height(54.dp)
                     ) {
-                        Text("Remove background ✦", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (originalBitmap == null) "Pilih Gambar & Hapus BG ✦" else "Hapus Background ✦",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                // S04: BACKGROUND STUDIO (mockup-04)
+                // S04: BACKGROUND STUDIO
                 StudioTool.BACKGROUND -> {
-                    // Segmented: Solid | Gradient | Image
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -647,41 +1224,124 @@ fun StudioScreen(
                                     .weight(1f)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (isSelected) SurfaceRaised else Color.Transparent)
-                                    .clickable { backgroundTab = tab }
+                                    .clickable {
+                                        backgroundTab = tab
+                                        if (tab == "Image" && customBgBitmap == null) {
+                                            bgImagePickerLauncher.launch("image/*")
+                                        }
+                                    }
                                     .padding(vertical = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(tab, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, color = if (isSelected) TextPrimary else TextSecondary)
+                                Text(
+                                    text = tab,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) TextPrimary else TextSecondary
+                                )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Exact mockup-04 HexColorPicker with swatches & RGB sliders
-                    HexColorPicker(
-                        selectedColor = selectedBgColor,
-                        onColorChanged = { newColor ->
-                            selectedBgColor = newColor
+                    if (backgroundTab == "Image") {
+                        Card(
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { bgImagePickerLauncher.launch("image/*") }
+                                .border(1.dp, LineDivider, RoundedCornerShape(18.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (customBgBitmap != null) "Gambar latar kustom aktif" else "Pilih gambar latar dari Galeri",
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "Ketuk untuk mengganti foto background",
+                                        fontSize = 12.sp,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Icon(Icons.Default.ImageSearch, contentDescription = null, tint = AccentPrimary)
+                            }
                         }
-                    )
+                    } else {
+                        HexColorPicker(
+                            selectedColor = selectedBgColor,
+                            onColorChanged = { newColor ->
+                                selectedBgColor = newColor
+                            }
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     Button(
                         onClick = {
+                            val bmp = originalBitmap
+                            if (bmp == null) {
+                                photoPickerLauncher.launch("image/*")
+                                return@Button
+                            }
                             coroutineScope.launch {
-                                val cutout = cutoutBitmap ?: originalBitmap ?: return@launch
                                 isProcessing = true
                                 try {
+                                    val subject = cutoutBitmap ?: run {
+                                        val outcome = segmentationEngine.segmentBackgroundDetailed(
+                                            sourceBitmap = bmp,
+                                            edgeMode = edgeRefinementMode,
+                                            highPrecision = true
+                                        )
+                                        cutoutBitmap = outcome.bitmap
+                                        outcome.bitmap
+                                    }
                                     val composited = withContext(Dispatchers.Default) {
+                                        val style = when (backgroundTab) {
+                                            "Gradient" -> BackgroundStyle.Gradient(
+                                                startColor = selectedBgColor,
+                                                endColor = 0xFF111827.toInt(),
+                                                angleDegrees = 45f
+                                            )
+                                            "Image" -> {
+                                                val bgBmp = customBgBitmap
+                                                if (bgBmp != null) BackgroundStyle.Image(bgBmp)
+                                                else BackgroundStyle.Solid(selectedBgColor)
+                                            }
+                                            else -> BackgroundStyle.Solid(selectedBgColor)
+                                        }
                                         bgEngine.composite(
-                                            subjectCutout = cutout,
-                                            background = BackgroundStyle.Solid(selectedBgColor),
+                                            subjectCutout = subject,
+                                            background = style,
                                             shadow = SubjectShadow(opacity = 0.35f, radius = 16f)
                                         )
                                     }
                                     processedBitmap = composited
+                                    val encoded = withContext(Dispatchers.Default) {
+                                        FormatConverter().convert(composited, selectedOutputFormat, quality = 90).outputBytes
+                                    }
+                                    processedBytes = encoded
+                                    processedSizeBytes = encoded.size.toLong()
+                                    hasProcessedResult = true
+                                    showFullResultOnly = true
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.SUCCESS,
+                                        title = "Background baru berhasil diterapkan!",
+                                        message = "Hasil komposisi langsung tampil dan siap disimpan ke Galeri."
+                                    )
+                                } catch (t: Throwable) {
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.ERROR,
+                                        title = "Gagal menerapkan background",
+                                        message = t.localizedMessage ?: "Terjadi kesalahan saat komposisi latar."
+                                    )
                                 } finally {
                                     isProcessing = false
                                 }
@@ -693,65 +1353,36 @@ fun StudioScreen(
                             .fillMaxWidth()
                             .height(54.dp)
                     ) {
-                        Text("Apply background ↗", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (originalBitmap == null) "Pilih Gambar & Terapkan Latar ↗" else "Terapkan Background ↗",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                // S05: IMAGE CONVERTER (mockup-05)
+                // S05: IMAGE CONVERTER
                 StudioTool.CONVERT -> {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { photoPickerLauncher.launch("image/*") }
-                            .border(1.dp, LineDivider, RoundedCornerShape(20.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(54.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFFE8D7C3)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Image, contentDescription = null, tint = Color(0xFF6B5844))
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(imageDisplayName.lowercase(), fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text("${imageDisplayName.substringAfterLast('.', "PNG").uppercase()} • $imageDimensionText • ${formatFileSize(originalSizeBytes)}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                            }
-                            Icon(Icons.Default.Check, contentDescription = null, tint = AccentPrimary)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Convert to", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        Text("Choose format", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                        Text("Konversi ke format", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text("Pilih format target", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 3 Format Cards: PNG, JPG, WebP matching mockup-05
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         listOf(
                             Triple(ImageFormat.PNG, "Lossless", Icons.Outlined.Image),
-                            Triple(ImageFormat.JPEG, "Photos", Icons.Outlined.PhotoCamera),
-                            Triple(ImageFormat.WEBP, "Selected", Icons.Outlined.Layers)
+                            Triple(ImageFormat.JPEG, "Foto", Icons.Outlined.PhotoCamera),
+                            Triple(ImageFormat.WEBP, "Modern", Icons.Outlined.Layers)
                         ).forEach { (fmt, sub, icon) ->
                             val isSelected = selectedOutputFormat == fmt
                             Card(
@@ -775,15 +1406,14 @@ fun StudioScreen(
                                     Icon(imageVector = icon, contentDescription = null, tint = if (isSelected) AccentPrimary else TextPrimary, modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(text = fmt.name, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                    Text(text = if (isSelected) "Selected" else sub, fontSize = 11.sp, color = if (isSelected) AccentPrimary else TextMuted)
+                                    Text(text = if (isSelected) "Dipilih" else sub, fontSize = 11.sp, color = if (isSelected) AccentPrimary else TextMuted)
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Options Card with 3 toggle dots matching mockup-05
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
@@ -792,32 +1422,73 @@ fun StudioScreen(
                             .border(1.dp, LineDivider, RoundedCornerShape(20.dp))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            OptionToggleRow(title = "Preserve dimensions", subtitle = "Keep original $imageDimensionText", checked = preserveDimensions, onCheckedChange = { preserveDimensions = it })
+                            OptionToggleRow(
+                                title = "Pertahankan resolusi asli",
+                                subtitle = if (imageDimensionText.isNotBlank()) "Tetap $imageDimensionText" else "Sesuai dimensi asli",
+                                checked = preserveDimensions,
+                                onCheckedChange = { preserveDimensions = it }
+                            )
                             HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 10.dp))
-                            OptionToggleRow(title = "Preserve transparency", subtitle = "Supported by ${selectedOutputFormat.name}", checked = preserveTransparency, onCheckedChange = { preserveTransparency = it })
+                            OptionToggleRow(
+                                title = "Pertahankan transparansi",
+                                subtitle = if (selectedOutputFormat == ImageFormat.JPEG) "JPG akan diratakan ke latar putih" else "Didukung penuh oleh ${selectedOutputFormat.name}",
+                                checked = preserveTransparency,
+                                onCheckedChange = { preserveTransparency = it }
+                            )
                             HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 10.dp))
-                            OptionToggleRow(title = "Remove GPS metadata", subtitle = "Protect image privacy", checked = removeGpsMetadata, onCheckedChange = { removeGpsMetadata = it })
+                            OptionToggleRow(
+                                title = "Hapus metadata lokasi (GPS/EXIF)",
+                                subtitle = "Lindungi privasi foto saat dibagikan",
+                                checked = removeGpsMetadata,
+                                onCheckedChange = { removeGpsMetadata = it }
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     Button(
                         onClick = {
+                            val bmp = cutoutBitmap ?: originalBitmap
+                            if (bmp == null) {
+                                photoPickerLauncher.launch("image/*")
+                                return@Button
+                            }
                             coroutineScope.launch {
-                                val bmp = originalBitmap ?: return@launch
                                 isProcessing = true
                                 try {
-                                    val decoded = withContext(Dispatchers.Default) {
+                                    val convPair = withContext(Dispatchers.Default) {
                                         val converter = FormatConverter()
-                                        val res = converter.convert(bmp, selectedOutputFormat)
-                                        BitmapFactory.decodeByteArray(res.outputBytes, 0, res.outputBytes.size)
+                                        val res = converter.convert(bmp, selectedOutputFormat, quality = 90)
+                                        val decoded = BitmapFactory.decodeByteArray(res.outputBytes, 0, res.outputBytes.size)
+                                        Pair(res, decoded)
                                     }
+                                    val res = convPair.first
+                                    val decoded = convPair.second
                                     if (decoded != null) {
                                         processedBitmap = decoded
+                                        processedBytes = res.outputBytes
+                                        processedSizeBytes = res.outputBytes.size.toLong()
+                                        hasProcessedResult = true
+                                        showFullResultOnly = true
+                                        currentAlert = UiAlert(
+                                            kind = AlertKind.SUCCESS,
+                                            title = "Berhasil dikonversi ke ${selectedOutputFormat.name}!",
+                                            message = "Ukuran file hasil: ${formatFileSize(res.outputBytes.size.toLong())} (${res.finalWidth}×${res.finalHeight}). Langsung simpan di atas."
+                                        )
+                                    } else {
+                                        currentAlert = UiAlert(
+                                            kind = AlertKind.ERROR,
+                                            title = "Konversi gagal",
+                                            message = "Tidak dapat mengonversi gambar ke format ${selectedOutputFormat.name}."
+                                        )
                                     }
                                 } catch (t: Throwable) {
-                                    t.printStackTrace()
+                                    currentAlert = UiAlert(
+                                        kind = AlertKind.ERROR,
+                                        title = "Konversi gagal diproses",
+                                        message = t.localizedMessage ?: "Terjadi kesalahan saat mengonversi format."
+                                    )
                                 } finally {
                                     isProcessing = false
                                 }
@@ -829,167 +1500,12 @@ fun StudioScreen(
                             .fillMaxWidth()
                             .height(54.dp)
                     ) {
-                        Text("Convert to ${selectedOutputFormat.name} →", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // S07: EXPORT IMAGE (mockup-07)
-                StudioTool.EXPORT -> {
-                    val finalBytes = compressionResult?.bestCandidate?.sizeBytes ?: (originalSizeBytes * 0.284).toLong()
-                    val finalSavings = compressionResult?.bestCandidate?.savingsPct ?: 71.6f
-
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, LineDivider, RoundedCornerShape(20.dp))
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("FINAL FILE SIZE", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = TextMuted)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(formatFileSize(finalBytes), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                }
-                                Text("Saved ${"%.1f".format(finalSavings)}%*", color = SemanticSuccess, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-
-                            HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 14.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("File format", color = TextSecondary)
-                                Text(selectedOutputFormat.name, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Dimensions", color = TextSecondary)
-                                Text(imageDimensionText, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Transparency", color = TextSecondary)
-                                Text(if (selectedOutputFormat == ImageFormat.JPEG) "Flattened" else "Preserved", fontWeight = FontWeight.Bold, color = TextPrimary)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Destination Card
-                    Card(
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, LineDivider, RoundedCornerShape(18.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("Save destination", fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text("Pictures/PixelStudio", fontSize = 12.sp, color = TextSecondary)
-                            }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = AccentPrimary)
-                        }
-                    }
-
-                    if (exportStatusMessage != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = exportStatusMessage!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (exportStatusMessage!!.startsWith("Saved")) SemanticSuccess else SemanticError
+                            text = if (originalBitmap == null) "Pilih Gambar & Konversi →" else "Konversi ke ${selectedOutputFormat.name} →",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Primary Button: Save to device ↓
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                val toExport = processedBitmap ?: originalBitmap ?: return@launch
-                                isProcessing = true
-                                try {
-                                    val exportManager = ExportManager(context)
-                                    val bytes = withContext(Dispatchers.Default) {
-                                        val converter = FormatConverter()
-                                        converter.convert(toExport, selectedOutputFormat, quality = 85).outputBytes
-                                    }
-                                    val result = exportManager.exportToPictures(
-                                        ExportRequest(bytes, selectedOutputFormat, "Nalaro_${System.currentTimeMillis()}")
-                                    )
-                                    exportStatusMessage = if (result.isSuccess) {
-                                        "Saved to ${result.absolutePath ?: "Pictures/PixelStudio"}!"
-                                    } else {
-                                        "Export failed: ${result.errorMessage}"
-                                    }
-                                } catch (t: Throwable) {
-                                    exportStatusMessage = "Export failed: ${t.localizedMessage}"
-                                } finally {
-                                    isProcessing = false
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                    ) {
-                        Text("Save to device ↓", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Secondary Button: Share image ↗
-                    OutlinedButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                val toExport = processedBitmap ?: originalBitmap ?: return@launch
-                                isProcessing = true
-                                try {
-                                    val exportManager = ExportManager(context)
-                                    val bytes = withContext(Dispatchers.Default) {
-                                        val converter = FormatConverter()
-                                        converter.convert(toExport, selectedOutputFormat, quality = 85).outputBytes
-                                    }
-                                    val result = exportManager.exportToPictures(
-                                        ExportRequest(bytes, selectedOutputFormat, "Nalaro_Share_${System.currentTimeMillis()}")
-                                    )
-                                    if (result.isSuccess && result.uri != null) {
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = selectedOutputFormat.mimeType
-                                            putExtra(Intent.EXTRA_STREAM, result.uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Share image"))
-                                    } else {
-                                        exportStatusMessage = "Could not prepare image for sharing"
-                                    }
-                                } catch (t: Throwable) {
-                                    exportStatusMessage = "Share failed: ${t.localizedMessage}"
-                                } finally {
-                                    isProcessing = false
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, LineDivider),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                    ) {
-                        Text("Share image ↗", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -1013,13 +1529,14 @@ private fun OptionToggleRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.SemiBold, color = TextPrimary)
             Text(subtitle, fontSize = 12.sp, color = TextMuted)
         }
+        Spacer(modifier = Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .size(14.dp)
+                .size(16.dp)
                 .clip(CircleShape)
                 .background(if (checked) AccentPrimary else TextMuted)
         )

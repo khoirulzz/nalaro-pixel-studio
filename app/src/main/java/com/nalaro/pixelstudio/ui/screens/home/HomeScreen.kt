@@ -1,33 +1,51 @@
 package com.nalaro.pixelstudio.ui.screens.home
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.nalaro.pixelstudio.core.export.ExportManager
+import com.nalaro.pixelstudio.core.export.ExportedImageItem
+import com.nalaro.pixelstudio.ui.components.formatFileSize
 import com.nalaro.pixelstudio.ui.theme.*
 
 @Composable
 fun HomeScreen(
     onNavigateToStudio: (tool: String) -> Unit,
+    onNavigateToBatch: () -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {},
     onNavigateToModelManager: () -> Unit,
+    onOpenImageInStudio: (Uri) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var recentExports by remember { mutableStateOf<List<ExportedImageItem>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        recentExports = ExportManager(context).listExportedImages(limit = 3)
+    }
+
     Scaffold(
         topBar = {
             Column(
@@ -42,7 +60,6 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Logo + Brand Mark from mockup-01
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
@@ -77,7 +94,6 @@ fun HomeScreen(
                         }
                     }
 
-                    // Settings Button (Links to Model Manager & Preferences)
                     IconButton(
                         onClick = onNavigateToModelManager,
                         modifier = Modifier
@@ -88,7 +104,7 @@ fun HomeScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Settings & AI Models",
+                            contentDescription = "Pengaturan & Model AI",
                             tint = TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
@@ -108,7 +124,6 @@ fun HomeScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(6.dp))
-                // Exact Headline from mockup-01
                 Text(
                     text = "Everything your\nimages need.",
                     style = MaterialTheme.typography.headlineLarge.copy(
@@ -120,19 +135,20 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Convert, compress and perfect your photos.\nPrivately, right on your device.",
+                    text = "Hapus latar, kompres, dan konversi foto.\n100% lokal dan privat di perangkatmu.",
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     color = TextSecondary
                 )
             }
 
-            // Featured Tool Card matching mockup-01 (Warm Tan editorial gradient)
+            // Featured Tool Card
             item {
                 Card(
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { onNavigateToStudio("remove_bg") }
                         .border(1.dp, LineDivider, RoundedCornerShape(24.dp))
                 ) {
                     Box(
@@ -152,7 +168,7 @@ fun HomeScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "FEATURED TOOL",
+                                    text = "FITUR UNGGULAN",
                                     fontSize = 10.sp,
                                     letterSpacing = 1.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -160,7 +176,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Smart\nCompression",
+                                    text = "Instant\nRemove BG",
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Bold,
                                     lineHeight = 28.sp,
@@ -168,55 +184,59 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Smaller files. Beautiful details.",
+                                    text = "Potongan rapi dengan On-Device AI.",
                                     fontSize = 12.sp,
                                     color = Color(0xFF5A4938)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Button(
-                                    onClick = { onNavigateToStudio("compress") },
+                                    onClick = { onNavigateToStudio("remove_bg") },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                                     shape = RoundedCornerShape(14.dp),
                                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                                 ) {
-                                    Text("Open studio ↗", color = Color(0xFF2C2218), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(
+                                        "Buka Studio ↗",
+                                        color = Color(0xFF2C2218),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
                                 }
                             }
 
-                            // Product bottle preview card mockup
+                            Spacer(modifier = Modifier.width(12.dp))
+
                             Box(
                                 modifier = Modifier
-                                    .width(100.dp)
-                                    .height(130.dp)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .size(96.dp)
+                                    .clip(RoundedCornerShape(22.dp))
                                     .background(Color(0xFFF4EDE4))
-                                    .border(1.dp, Color(0xFFDAC7B2), RoundedCornerShape(16.dp))
-                                    .padding(8.dp),
+                                    .border(1.dp, Color(0xFFDAC7B2), RoundedCornerShape(22.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(AccentSoft),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.AutoFixHigh,
+                                            contentDescription = null,
+                                            tint = AccentPrimary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "NALARO",
-                                        fontSize = 8.sp,
+                                        text = "OFFLINE AI",
+                                        fontSize = 9.sp,
                                         letterSpacing = 1.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF554433)
                                     )
-                                    Text(
-                                        text = "SKIN STUDIO",
-                                        fontSize = 7.sp,
-                                        color = Color(0xFF776655)
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(AccentSoft),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("• SERUM •", fontSize = 6.sp, fontWeight = FontWeight.Bold, color = AccentPrimary)
-                                    }
                                 }
                             }
                         }
@@ -224,7 +244,7 @@ fun HomeScreen(
                 }
             }
 
-            // Section "Your tools" with "Explore all ↗"
+            // Section "Alat Studio"
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -232,40 +252,40 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Your tools",
+                        text = "Alat Studio",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
                     Text(
-                        text = "Explore all ↗",
+                        text = "Batch Queue ↗",
                         fontSize = 13.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.clickable { onNavigateToStudio("compress") }
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentPrimary,
+                        modifier = Modifier.clickable { onNavigateToBatch() }
                     )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 2x2 Grid exactly matching mockup-01
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         ToolGridItemLight(
-                            title = "Compress",
-                            description = "Shrink, stay sharp",
-                            icon = Icons.Outlined.Layers,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onNavigateToStudio("compress") }
-                        )
-                        ToolGridItemLight(
                             title = "Remove BG",
-                            description = "Clean edge cutouts",
+                            description = "Hapus latar otomatis",
                             icon = Icons.Outlined.ContentCut,
                             modifier = Modifier.weight(1f),
                             onClick = { onNavigateToStudio("remove_bg") }
+                        )
+                        ToolGridItemLight(
+                            title = "Compress",
+                            description = "Perkecil ukuran file",
+                            icon = Icons.Outlined.Layers,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onNavigateToStudio("compress") }
                         )
                     }
 
@@ -274,18 +294,71 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         ToolGridItemLight(
+                            title = "Background",
+                            description = "Warna & latar baru",
+                            icon = Icons.Outlined.Tonality,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onNavigateToStudio("background") }
+                        )
+                        ToolGridItemLight(
                             title = "Convert",
                             description = "PNG, JPG, WebP",
                             icon = Icons.Outlined.SwapHoriz,
                             modifier = Modifier.weight(1f),
                             onClick = { onNavigateToStudio("convert") }
                         )
-                        ToolGridItemLight(
-                            title = "Background",
-                            description = "Color & effects",
-                            icon = Icons.Outlined.Tonality,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onNavigateToStudio("background") }
+                    }
+                }
+            }
+
+            // Batch Processing Quick Entry Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToBatch() }
+                        .border(1.dp, LineDivider, RoundedCornerShape(18.dp))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(AccentSoft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PhotoLibrary,
+                                contentDescription = null,
+                                tint = AccentPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Batch Processing",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Proses & simpan banyak gambar sekaligus",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = TextMuted
                         )
                     }
                 }
@@ -329,7 +402,7 @@ fun HomeScreen(
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Hugging Face on-device ONNX models",
+                                text = "Built-in Offline AI aktif • Opsi model ONNX tambahan",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TextSecondary
                             )
@@ -342,6 +415,78 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
+
+            if (recentExports.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Hasil Tersimpan Terbaru",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Lihat Semua ↗",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentPrimary,
+                            modifier = Modifier.clickable { onNavigateToLibrary() }
+                        )
+                    }
+                }
+
+                items(recentExports, key = { it.uri.toString() }) { exported ->
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenImageInStudio(exported.uri) }
+                            .border(1.dp, LineDivider, RoundedCornerShape(16.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = exported.uri,
+                                contentDescription = exported.displayName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SurfaceSubtle)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = exported.displayName,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "${formatFileSize(exported.sizeBytes)} • Ketuk untuk buka di Studio",
+                                    fontSize = 11.sp,
+                                    color = SemanticSuccess
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = TextMuted
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
