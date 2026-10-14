@@ -11,7 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.core.content.IntentCompat
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.nalaro.pixelstudio.data.repository.ModelRepository
 import com.nalaro.pixelstudio.ui.components.AppTab
 import com.nalaro.pixelstudio.ui.components.BottomNavigationCompact
@@ -32,10 +36,21 @@ class MainActivity : ComponentActivity() {
 
         val repository = ModelRepository.getInstance(applicationContext)
 
-        // Read incoming image Uri from Android Sharesheet if present
-        var sharedImageUri: Uri? = null
-        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
-            sharedImageUri = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        // Read incoming image Uri(s) from Android Sharesheet if present
+        val sharedImageUri: Uri? = when {
+            intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true -> {
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            }
+            intent?.action == Intent.ACTION_SEND_MULTIPLE && intent.type?.startsWith("image/") == true -> {
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.firstOrNull()
+            }
+            else -> null
+        }
+
+        val initialStartDestination = if (sharedImageUri != null) {
+            Screen.Studio.route
+        } else {
+            Screen.Home.route
         }
 
         setContent {
@@ -44,7 +59,9 @@ class MainActivity : ComponentActivity() {
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = currentBackStackEntry?.destination?.route
 
-                var selectedTab by remember { mutableStateOf(AppTab.HOME) }
+                var selectedTab by remember {
+                    mutableStateOf(if (sharedImageUri != null) AppTab.STUDIO else AppTab.HOME)
+                }
 
                 // Synchronize tab with route
                 LaunchedEffect(currentRoute) {
@@ -58,6 +75,14 @@ class MainActivity : ComponentActivity() {
 
                 val showBottomNav = currentRoute != Screen.ModelManager.route
 
+                val navigateBackSafely: () -> Unit = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route) {
+                            launchSingleTop = true
+                        }
+                    }
+                }
+
                 Scaffold(
                     bottomBar = {
                         if (showBottomNav) {
@@ -65,13 +90,18 @@ class MainActivity : ComponentActivity() {
                                 currentTab = selectedTab,
                                 onTabSelected = { tab ->
                                     selectedTab = tab
-                                    when (tab) {
-                                        AppTab.HOME -> navController.navigate(Screen.Home.route) {
-                                            popUpTo(Screen.Home.route) { inclusive = true }
+                                    val targetRoute = when (tab) {
+                                        AppTab.HOME -> Screen.Home.route
+                                        AppTab.STUDIO -> Screen.Studio.createRoute("compress")
+                                        AppTab.BATCH -> Screen.Batch.route
+                                        AppTab.LIBRARY -> Screen.Library.route
+                                    }
+                                    navController.navigate(targetRoute) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
                                         }
-                                        AppTab.STUDIO -> navController.navigate(Screen.Studio.createRoute())
-                                        AppTab.BATCH -> navController.navigate(Screen.Batch.route)
-                                        AppTab.LIBRARY -> navController.navigate(Screen.Library.route)
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             )
@@ -82,33 +112,46 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     NavHost(
                         navController = navController,
-                        startDestination = Screen.Home.route,
+                        startDestination = initialStartDestination,
                         modifier = Modifier.padding(innerPadding)
                     ) {
                         composable(Screen.Home.route) {
                             HomeScreen(
                                 onNavigateToStudio = { tool ->
-                                    navController.navigate(Screen.Studio.createRoute(tool))
+                                    navController.navigate(Screen.Studio.createRoute(tool)) {
+                                        launchSingleTop = true
+                                    }
                                 },
                                 onNavigateToModelManager = {
-                                    navController.navigate(Screen.ModelManager.route)
+                                    navController.navigate(Screen.ModelManager.route) {
+                                        launchSingleTop = true
+                                    }
                                 }
                             )
                         }
 
-                        composable(Screen.Studio.route) { backStackEntry ->
+                        composable(
+                            route = Screen.Studio.route,
+                            arguments = listOf(
+                                navArgument("tool") {
+                                    type = NavType.StringType
+                                    defaultValue = "compress"
+                                }
+                            )
+                        ) { backStackEntry ->
                             val tool = backStackEntry.arguments?.getString("tool") ?: "compress"
                             StudioScreen(
                                 initialTool = tool,
+                                initialImageUri = sharedImageUri,
                                 modelRepository = repository,
-                                onNavigateBack = {
-                                    navController.popBackStack()
-                                }
+                                onNavigateBack = navigateBackSafely
                             )
                         }
 
                         composable(Screen.Batch.route) {
-                            BatchScreen()
+                            BatchScreen(
+                                onNavigateBack = navigateBackSafely
+                            )
                         }
 
                         composable(Screen.Library.route) {
@@ -118,9 +161,7 @@ class MainActivity : ComponentActivity() {
                         composable(Screen.ModelManager.route) {
                             ModelManagerScreen(
                                 repository = repository,
-                                onNavigateBack = {
-                                    navController.popBackStack()
-                                }
+                                onNavigateBack = navigateBackSafely
                             )
                         }
                     }

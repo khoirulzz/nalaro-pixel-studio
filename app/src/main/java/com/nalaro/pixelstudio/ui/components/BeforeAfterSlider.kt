@@ -31,7 +31,7 @@ fun BeforeAfterSlider(
     processedBitmap: Bitmap?,
     modifier: Modifier = Modifier
 ) {
-    var splitFraction by remember { mutableStateOf(0.5f) }
+    var splitFraction by remember { mutableFloatStateOf(0.5f) }
 
     BoxWithConstraints(
         modifier = modifier
@@ -40,26 +40,30 @@ fun BeforeAfterSlider(
             .background(SurfaceRaised),
         contentAlignment = Alignment.Center
     ) {
-        val totalWidth = constraints.maxWidth.toFloat()
-        val totalHeight = constraints.maxHeight.toFloat()
+        val totalWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val boxWidthDp = maxWidth
 
-        if (originalBitmap != null && processedBitmap != null) {
+        if (originalBitmap != null && processedBitmap != null &&
+            !originalBitmap.isRecycled && !processedBitmap.isRecycled
+        ) {
             val origImage = remember(originalBitmap) { originalBitmap.asImageBitmap() }
             val procImage = remember(processedBitmap) { processedBitmap.asImageBitmap() }
 
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
+                    .pointerInput(totalWidthPx) {
                         detectDragGestures { change, _ ->
                             change.consume()
-                            splitFraction = (change.position.x / totalWidth).coerceIn(0.05f, 0.95f)
+                            splitFraction = (change.position.x / totalWidthPx).coerceIn(0.05f, 0.95f)
                         }
                     }
             ) {
                 val canvasW = size.width.toInt()
                 val canvasH = size.height.toInt()
-                val splitX = (size.width * splitFraction).toInt()
+                if (canvasW <= 0 || canvasH <= 0) return@Canvas
+
+                val splitX = (size.width * splitFraction).toInt().coerceIn(0, canvasW)
 
                 // Draw Processed (Right / Full background)
                 drawImage(
@@ -68,7 +72,7 @@ fun BeforeAfterSlider(
                 )
 
                 // Draw Original (Left / Clipped)
-                if (splitX > 0) {
+                if (splitX > 0 && originalBitmap.width > 0 && originalBitmap.height > 0) {
                     val srcRatioX = originalBitmap.width.toFloat() / canvasW.toFloat()
                     val clipSrcW = (splitX * srcRatioX).toInt().coerceIn(1, originalBitmap.width)
 
@@ -90,10 +94,11 @@ fun BeforeAfterSlider(
                 )
             }
 
-            // Divider Handle badge
+            // Divider Handle badge (correctly positioned in Dp relative to Center alignment)
+            val handleOffsetDp = (boxWidthDp * splitFraction) - (boxWidthDp / 2f)
             Box(
                 modifier = Modifier
-                    .offset(x = ((totalWidth * splitFraction) - 20.dp.value).dp)
+                    .offset(x = handleOffsetDp)
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(AccentPrimary),

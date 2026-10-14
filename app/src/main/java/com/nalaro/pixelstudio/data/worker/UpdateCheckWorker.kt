@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.nalaro.pixelstudio.data.repository.ModelRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -15,9 +16,12 @@ class UpdateCheckWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         return@withContext try {
             val repository = ModelRepository.getInstance(applicationContext)
-            val updated = repository.checkForUpdates(force = false)
+            repository.initialize()
+            repository.checkForUpdates(force = false)
             Result.success()
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
             Result.retry()
         }
     }

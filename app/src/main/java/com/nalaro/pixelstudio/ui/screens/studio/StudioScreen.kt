@@ -1,6 +1,8 @@
 package com.nalaro.pixelstudio.ui.screens.studio
 
+import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,8 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,13 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nalaro.pixelstudio.core.ai.BitmapUtils
 import com.nalaro.pixelstudio.core.ai.BrushMode
-import com.nalaro.pixelstudio.core.ai.MaskRefiner
 import com.nalaro.pixelstudio.core.ai.OnnxSegmentationEngine
 import com.nalaro.pixelstudio.core.compression.*
 import com.nalaro.pixelstudio.core.converter.FormatConverter
@@ -38,12 +36,14 @@ import com.nalaro.pixelstudio.core.export.ExportManager
 import com.nalaro.pixelstudio.core.export.ExportRequest
 import com.nalaro.pixelstudio.core.studio.BackgroundStyle
 import com.nalaro.pixelstudio.core.studio.BackgroundStudioEngine
-import com.nalaro.pixelstudio.core.studio.SubjectPlacement
 import com.nalaro.pixelstudio.core.studio.SubjectShadow
+import com.nalaro.pixelstudio.data.models.ModelStatus
 import com.nalaro.pixelstudio.data.repository.ModelRepository
 import com.nalaro.pixelstudio.ui.components.*
 import com.nalaro.pixelstudio.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class StudioTool(val label: String) {
     COMPRESS("Smart Compression"),
@@ -56,6 +56,7 @@ enum class StudioTool(val label: String) {
 @Composable
 fun StudioScreen(
     initialTool: String = "compress",
+    initialImageUri: Uri? = null,
     modelRepository: ModelRepository,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -63,7 +64,7 @@ fun StudioScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var activeTool by remember {
+    var activeTool by remember(initialTool) {
         mutableStateOf(
             when (initialTool) {
                 "remove_bg" -> StudioTool.REMOVE_BG
@@ -75,10 +76,16 @@ fun StudioScreen(
         )
     }
 
+    // Observe installed AI models
+    val allModels by modelRepository.allModels.collectAsState(initial = emptyList())
+    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
+
     // Image State
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var originalSizeBytes by remember { mutableStateOf(4820000L) } // 4.82 MB from mockups
+    var imageDisplayName by remember { mutableStateOf("PRODUCT-HERO.PNG") }
+    var imageDimensionText by remember { mutableStateOf("2048 × 2048") }
+    var originalSizeBytes by remember { mutableLongStateOf(4820000L) } // 4.82 MB from mockups
     var isProcessing by remember { mutableStateOf(false) }
     var exportStatusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -91,11 +98,17 @@ fun StudioScreen(
     var isPrecisionModel by remember { mutableStateOf(false) }
     var activeBrushMode by remember { mutableStateOf(BrushMode.ERASE) }
     var cutoutBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    val segmentationEngine = remember { OnnxSegmentationEngine(context) }
+    val segmentationEngine = remember { OnnxSegmentationEngine(context.applicationContext) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            segmentationEngine.closeSession()
+        }
+    }
 
     // Background Studio State (mockup-04)
     val bgEngine = remember { BackgroundStudioEngine() }
-    var selectedBgColor by remember { mutableStateOf(0xFFFF6A3D.toInt()) }
+    var selectedBgColor by remember { mutableIntStateOf(0xFFFF6A3D.toInt()) }
     var backgroundTab by remember { mutableStateOf("Solid") }
 
     // Converter Options (mockup-05)
@@ -103,39 +116,77 @@ fun StudioScreen(
     var preserveTransparency by remember { mutableStateOf(true) }
     var removeGpsMetadata by remember { mutableStateOf(true) }
 
+    // Helper to load a Uri safely off the main thread
+    val loadUriIntoStudio: (Uri) -> Unit = { uri ->
+        coroutineScope.launch {
+            isProcessing = true
+            val asset = withContext(Dispatchers.IO) {
+                BitmapUtils.decodeSampledBitmapFromUri(context, uri, maxDimension = 2048)
+            }
+            if (asset != null) {
+                originalBitmap = asset.bitmap
+                processedBitmap = asset.bitmap
+                cutoutBitmap = null
+                compressionResult = null
+                imageDisplayName = asset.displayName
+                imageDimensionText = "${asset.originalWidth} × ${asset.originalHeight}"
+                originalSizeBytes = asset.sizeBytes
+                exportStatusMessage = null
+            }
+            isProcessing = false
+        }
+    }
+
     // Photo Picker
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bmp = android.graphics.BitmapFactory.decodeStream(stream)
-                    if (bmp != null) {
-                        originalBitmap = bmp
-                        processedBitmap = bmp
-                        originalSizeBytes = (bmp.width * bmp.height * 2.5).toLong()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            loadUriIntoStudio(uri)
         }
     }
 
-    // Default sample image generator
-    LaunchedEffect(Unit) {
-        if (originalBitmap == null) {
-            val sample = Bitmap.createBitmap(800, 800, Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(sample)
-            canvas.drawColor(android.graphics.Color.WHITE)
-            val paint = android.graphics.Paint().apply {
-                color = android.graphics.Color.parseColor("#E8D7C3")
-                isAntiAlias = true
+    // Initialize with incoming shared image Uri or default sample image
+    LaunchedEffect(initialImageUri) {
+        if (initialImageUri != null) {
+            loadUriIntoStudio(initialImageUri)
+        } else if (originalBitmap == null) {
+            val sample = withContext(Dispatchers.Default) {
+                val bmp = Bitmap.createBitmap(800, 800, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bmp)
+                canvas.drawColor(android.graphics.Color.WHITE)
+                val paint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.parseColor("#E8D7C3")
+                    isAntiAlias = true
+                }
+                canvas.drawRoundRect(250f, 200f, 550f, 650f, 60f, 60f, paint)
+                bmp
             }
-            canvas.drawRoundRect(250f, 200f, 550f, 650f, 60f, 60f, paint)
             originalBitmap = sample
             processedBitmap = sample
+        }
+    }
+
+    // Offload Background Studio live preview compositing to Dispatchers.Default (avoids UI ANR/OOM on slider drag)
+    LaunchedEffect(activeTool, selectedBgColor, backgroundTab) {
+        if (activeTool == StudioTool.BACKGROUND) {
+            val subject = cutoutBitmap ?: originalBitmap ?: return@LaunchedEffect
+            val composited = withContext(Dispatchers.Default) {
+                val style = when (backgroundTab) {
+                    "Gradient" -> BackgroundStyle.Gradient(
+                        startColor = selectedBgColor,
+                        endColor = 0xFF111827.toInt(),
+                        angleDegrees = 45f
+                    )
+                    else -> BackgroundStyle.Solid(selectedBgColor)
+                }
+                bgEngine.composite(
+                    subjectCutout = subject,
+                    background = style,
+                    shadow = SubjectShadow(opacity = 0.35f, radius = 16f)
+                )
+            }
+            processedBitmap = composited
         }
     }
 
@@ -166,27 +217,40 @@ fun StudioScreen(
                         )
                     }
 
-                    // Action button on top right matching mockups
-                    IconButton(
-                        onClick = {
-                            if (activeTool != StudioTool.EXPORT) {
-                                activeTool = StudioTool.EXPORT
-                            } else {
-                                photoPickerLauncher.launch("image/*")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceRaised)
+                                .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Pick image",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        if (activeTool != StudioTool.EXPORT) {
+                            IconButton(
+                                onClick = { activeTool = StudioTool.EXPORT },
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SurfaceRaised)
+                                    .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.IosShare,
+                                    contentDescription = "Export",
+                                    tint = AccentPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                        },
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(SurfaceRaised)
-                            .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
-                    ) {
-                        Icon(
-                            imageVector = if (activeTool == StudioTool.EXPORT) Icons.Default.AddPhotoAlternate else Icons.Default.MoreHoriz,
-                            contentDescription = "Action",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        }
                     }
                 }
             }
@@ -308,13 +372,13 @@ fun StudioScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "PRODUCT-HERO.PNG",
+                    text = imageDisplayName.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.sp,
                     color = TextMuted
                 )
                 Text(
-                    text = "2048 × 2048",
+                    text = imageDimensionText,
                     style = MaterialTheme.typography.labelSmall,
                     color = TextMuted
                 )
@@ -403,14 +467,23 @@ fun StudioScreen(
                             coroutineScope.launch {
                                 val bmp = originalBitmap ?: return@launch
                                 isProcessing = true
-                                val engine = SmartCompressionEngine()
-                                val result = engine.compress(bmp, originalSizeBytes, compressionMode, selectedOutputFormat)
-                                compressionResult = result
-                                val decoded = android.graphics.BitmapFactory.decodeByteArray(
-                                    result.bestCandidate.encodedBytes, 0, result.bestCandidate.encodedBytes.size
-                                )
-                                processedBitmap = decoded
-                                isProcessing = false
+                                try {
+                                    val engine = SmartCompressionEngine()
+                                    val result = engine.compress(bmp, originalSizeBytes, compressionMode, selectedOutputFormat)
+                                    compressionResult = result
+                                    val decoded = withContext(Dispatchers.Default) {
+                                        BitmapFactory.decodeByteArray(
+                                            result.bestCandidate.encodedBytes, 0, result.bestCandidate.encodedBytes.size
+                                        )
+                                    }
+                                    if (decoded != null) {
+                                        processedBitmap = decoded
+                                    }
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                } finally {
+                                    isProcessing = false
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
@@ -425,13 +498,22 @@ fun StudioScreen(
 
                 // S03: AI REMOVE BACKGROUND (mockup-03)
                 StudioTool.REMOVE_BG -> {
+                    val targetModelId = if (isPrecisionModel) "u2net-precision-matting" else selectedModelId
+                    val activeModel = allModels.firstOrNull { it.id == targetModelId }
+                        ?: allModels.firstOrNull { it.status == ModelStatus.INSTALLED }
+                    val isModelInstalled = activeModel?.status == ModelStatus.INSTALLED && !activeModel.localFilePath.isNullOrBlank()
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(text = "Processing quality", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        Text(text = "Model installed ✓", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        Text(
+                            text = if (isModelInstalled) "Model installed ✓" else "Built-in fallback ready",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isModelInstalled) SemanticSuccess else TextSecondary
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -522,10 +604,19 @@ fun StudioScreen(
                             coroutineScope.launch {
                                 val bmp = originalBitmap ?: return@launch
                                 isProcessing = true
-                                val cutout = segmentationEngine.segmentBackground(bmp)
-                                cutoutBitmap = cutout
-                                processedBitmap = cutout
-                                isProcessing = false
+                                try {
+                                    val modelPath = activeModel?.localFilePath
+                                    if (!modelPath.isNullOrBlank()) {
+                                        segmentationEngine.loadModel(modelPath)
+                                    }
+                                    val cutout = segmentationEngine.segmentBackground(bmp)
+                                    cutoutBitmap = cutout
+                                    processedBitmap = cutout
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                } finally {
+                                    isProcessing = false
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
@@ -572,12 +663,6 @@ fun StudioScreen(
                         selectedColor = selectedBgColor,
                         onColorChanged = { newColor ->
                             selectedBgColor = newColor
-                            val cutout = cutoutBitmap ?: originalBitmap ?: return@HexColorPicker
-                            processedBitmap = bgEngine.composite(
-                                subjectCutout = cutout,
-                                background = BackgroundStyle.Solid(newColor),
-                                shadow = SubjectShadow(opacity = 0.35f, radius = 16f)
-                            )
                         }
                     )
 
@@ -585,12 +670,22 @@ fun StudioScreen(
 
                     Button(
                         onClick = {
-                            val cutout = cutoutBitmap ?: originalBitmap ?: return@Button
-                            processedBitmap = bgEngine.composite(
-                                subjectCutout = cutout,
-                                background = BackgroundStyle.Solid(selectedBgColor),
-                                shadow = SubjectShadow(opacity = 0.35f, radius = 16f)
-                            )
+                            coroutineScope.launch {
+                                val cutout = cutoutBitmap ?: originalBitmap ?: return@launch
+                                isProcessing = true
+                                try {
+                                    val composited = withContext(Dispatchers.Default) {
+                                        bgEngine.composite(
+                                            subjectCutout = cutout,
+                                            background = BackgroundStyle.Solid(selectedBgColor),
+                                            shadow = SubjectShadow(opacity = 0.35f, radius = 16f)
+                                        )
+                                    }
+                                    processedBitmap = composited
+                                } finally {
+                                    isProcessing = false
+                                }
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
                         shape = RoundedCornerShape(16.dp),
@@ -604,12 +699,12 @@ fun StudioScreen(
 
                 // S05: IMAGE CONVERTER (mockup-05)
                 StudioTool.CONVERT -> {
-                    // Selected image card matching mockup-05
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { photoPickerLauncher.launch("image/*") }
                             .border(1.dp, LineDivider, RoundedCornerShape(20.dp))
                     ) {
                         Row(
@@ -627,9 +722,9 @@ fun StudioScreen(
                             }
                             Spacer(modifier = Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("product-hero.png", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(imageDisplayName.lowercase(), fontWeight = FontWeight.Bold, color = TextPrimary)
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text("PNG • 2048 × 2048 • 4.82 MB", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                Text("${imageDisplayName.substringAfterLast('.', "PNG").uppercase()} • $imageDimensionText • ${formatFileSize(originalSizeBytes)}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                             }
                             Icon(Icons.Default.Check, contentDescription = null, tint = AccentPrimary)
                         }
@@ -697,7 +792,7 @@ fun StudioScreen(
                             .border(1.dp, LineDivider, RoundedCornerShape(20.dp))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            OptionToggleRow(title = "Preserve dimensions", subtitle = "Keep original 2048 × 2048", checked = preserveDimensions, onCheckedChange = { preserveDimensions = it })
+                            OptionToggleRow(title = "Preserve dimensions", subtitle = "Keep original $imageDimensionText", checked = preserveDimensions, onCheckedChange = { preserveDimensions = it })
                             HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 10.dp))
                             OptionToggleRow(title = "Preserve transparency", subtitle = "Supported by ${selectedOutputFormat.name}", checked = preserveTransparency, onCheckedChange = { preserveTransparency = it })
                             HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 10.dp))
@@ -709,11 +804,24 @@ fun StudioScreen(
 
                     Button(
                         onClick = {
-                            val bmp = originalBitmap ?: return@Button
-                            val converter = FormatConverter()
-                            val res = converter.convert(bmp, selectedOutputFormat)
-                            val decoded = android.graphics.BitmapFactory.decodeByteArray(res.outputBytes, 0, res.outputBytes.size)
-                            processedBitmap = decoded
+                            coroutineScope.launch {
+                                val bmp = originalBitmap ?: return@launch
+                                isProcessing = true
+                                try {
+                                    val decoded = withContext(Dispatchers.Default) {
+                                        val converter = FormatConverter()
+                                        val res = converter.convert(bmp, selectedOutputFormat)
+                                        BitmapFactory.decodeByteArray(res.outputBytes, 0, res.outputBytes.size)
+                                    }
+                                    if (decoded != null) {
+                                        processedBitmap = decoded
+                                    }
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                } finally {
+                                    isProcessing = false
+                                }
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
                         shape = RoundedCornerShape(16.dp),
@@ -727,7 +835,9 @@ fun StudioScreen(
 
                 // S07: EXPORT IMAGE (mockup-07)
                 StudioTool.EXPORT -> {
-                    // Details Card matching mockup-07
+                    val finalBytes = compressionResult?.bestCandidate?.sizeBytes ?: (originalSizeBytes * 0.284).toLong()
+                    val finalSavings = compressionResult?.bestCandidate?.savingsPct ?: 71.6f
+
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
@@ -744,26 +854,26 @@ fun StudioScreen(
                                 Column {
                                     Text("FINAL FILE SIZE", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = TextMuted)
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text("1.37 MB", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(formatFileSize(finalBytes), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                 }
-                                Text("Saved 71.6%*", color = SemanticSuccess, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Saved ${"%.1f".format(finalSavings)}%*", color = SemanticSuccess, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
 
                             HorizontalDivider(color = LineDivider, modifier = Modifier.padding(vertical = 14.dp))
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("File format", color = TextSecondary)
-                                Text("WebP", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(selectedOutputFormat.name, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Dimensions", color = TextSecondary)
-                                Text("2048 × 2048", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(imageDimensionText, fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Transparency", color = TextSecondary)
-                                Text("Preserved", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(if (selectedOutputFormat == ImageFormat.JPEG) "Flattened" else "Preserved", fontWeight = FontWeight.Bold, color = TextPrimary)
                             }
                         }
                     }
@@ -791,6 +901,16 @@ fun StudioScreen(
                         }
                     }
 
+                    if (exportStatusMessage != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = exportStatusMessage!!,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (exportStatusMessage!!.startsWith("Saved")) SemanticSuccess else SemanticError
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     // Primary Button: Save to device ↓
@@ -798,12 +918,26 @@ fun StudioScreen(
                         onClick = {
                             coroutineScope.launch {
                                 val toExport = processedBitmap ?: originalBitmap ?: return@launch
-                                val exportManager = ExportManager(context)
-                                val bytes = BitmapUtils.compressToByteArray(toExport, Bitmap.CompressFormat.WEBP, 80)
-                                val result = exportManager.exportToPictures(
-                                    ExportRequest(bytes, ImageFormat.WEBP, "Nalaro_${System.currentTimeMillis()}")
-                                )
-                                exportStatusMessage = if (result.isSuccess) "Saved to Pictures/PixelStudio!" else "Export failed: ${result.errorMessage}"
+                                isProcessing = true
+                                try {
+                                    val exportManager = ExportManager(context)
+                                    val bytes = withContext(Dispatchers.Default) {
+                                        val converter = FormatConverter()
+                                        converter.convert(toExport, selectedOutputFormat, quality = 85).outputBytes
+                                    }
+                                    val result = exportManager.exportToPictures(
+                                        ExportRequest(bytes, selectedOutputFormat, "Nalaro_${System.currentTimeMillis()}")
+                                    )
+                                    exportStatusMessage = if (result.isSuccess) {
+                                        "Saved to ${result.absolutePath ?: "Pictures/PixelStudio"}!"
+                                    } else {
+                                        "Export failed: ${result.errorMessage}"
+                                    }
+                                } catch (t: Throwable) {
+                                    exportStatusMessage = "Export failed: ${t.localizedMessage}"
+                                } finally {
+                                    isProcessing = false
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
@@ -819,7 +953,36 @@ fun StudioScreen(
 
                     // Secondary Button: Share image ↗
                     OutlinedButton(
-                        onClick = { /* Share */ },
+                        onClick = {
+                            coroutineScope.launch {
+                                val toExport = processedBitmap ?: originalBitmap ?: return@launch
+                                isProcessing = true
+                                try {
+                                    val exportManager = ExportManager(context)
+                                    val bytes = withContext(Dispatchers.Default) {
+                                        val converter = FormatConverter()
+                                        converter.convert(toExport, selectedOutputFormat, quality = 85).outputBytes
+                                    }
+                                    val result = exportManager.exportToPictures(
+                                        ExportRequest(bytes, selectedOutputFormat, "Nalaro_Share_${System.currentTimeMillis()}")
+                                    )
+                                    if (result.isSuccess && result.uri != null) {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = selectedOutputFormat.mimeType
+                                            putExtra(Intent.EXTRA_STREAM, result.uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share image"))
+                                    } else {
+                                        exportStatusMessage = "Could not prepare image for sharing"
+                                    }
+                                } catch (t: Throwable) {
+                                    exportStatusMessage = "Share failed: ${t.localizedMessage}"
+                                } finally {
+                                    isProcessing = false
+                                }
+                            }
+                        },
                         shape = RoundedCornerShape(16.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, LineDivider),
                         modifier = Modifier
@@ -844,7 +1007,9 @@ private fun OptionToggleRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -857,7 +1022,6 @@ private fun OptionToggleRow(
                 .size(14.dp)
                 .clip(CircleShape)
                 .background(if (checked) AccentPrimary else TextMuted)
-                .clickable { onCheckedChange(!checked) }
         )
     }
 }

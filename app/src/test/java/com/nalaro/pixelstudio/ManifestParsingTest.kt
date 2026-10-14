@@ -1,8 +1,8 @@
 package com.nalaro.pixelstudio
 
+import com.nalaro.pixelstudio.data.models.ManifestJsonAdapter
 import com.nalaro.pixelstudio.data.models.ManifestResponse
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -40,7 +40,7 @@ class ManifestParsingTest {
 
     @Test
     fun testParseHuggingFaceManifest() {
-        val moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+        val moshi = Moshi.Builder().add(ManifestJsonAdapter.FACTORY).build()
         val adapter = moshi.adapter(ManifestResponse::class.java)
 
         val manifest = adapter.fromJson(jsonSample)

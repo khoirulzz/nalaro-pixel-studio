@@ -49,6 +49,7 @@
         <!-- Foreground service declaration for WorkManager -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:exported="false"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
 

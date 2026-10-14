@@ -1,8 +1,8 @@
 package com.nalaro.pixelstudio.data.network
 
+import com.nalaro.pixelstudio.data.models.ManifestJsonAdapter
 import com.nalaro.pixelstudio.data.models.ManifestResponse
 import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
@@ -36,6 +36,12 @@ interface HuggingFaceApi {
             return "https://huggingface.co/$repoId/$path"
         }
 
+        fun createMoshi(): Moshi {
+            return Moshi.Builder()
+                .add(ManifestJsonAdapter.FACTORY)
+                .build()
+        }
+
         fun createClient(): HuggingFaceApi {
             val loggingInterceptor = HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
@@ -50,9 +56,7 @@ interface HuggingFaceApi {
                 .addInterceptor(loggingInterceptor)
                 .build()
 
-            val moshi = Moshi.Builder()
-                .addLast(KotlinJsonAdapterFactory())
-                .build()
+            val moshi = createMoshi()
 
             val retrofit = Retrofit.Builder()
                 .baseUrl(DEFAULT_BASE_URL)

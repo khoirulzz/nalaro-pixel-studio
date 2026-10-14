@@ -41,7 +41,9 @@ class BackgroundStudioEngine {
         canvasWidth: Int = subjectCutout.width,
         canvasHeight: Int = subjectCutout.height
     ): Bitmap {
-        val result = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+        val safeW = canvasWidth.coerceAtLeast(1)
+        val safeH = canvasHeight.coerceAtLeast(1)
+        val result = Bitmap.createBitmap(safeW, safeH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
 
         // 1. Draw Background
@@ -51,10 +53,10 @@ class BackgroundStudioEngine {
             }
             is BackgroundStyle.Gradient -> {
                 val rad = Math.toRadians(background.angleDegrees.toDouble())
-                val x1 = canvasWidth / 2f - (cos(rad) * canvasWidth / 2f).toFloat()
-                val y1 = canvasHeight / 2f - (sin(rad) * canvasHeight / 2f).toFloat()
-                val x2 = canvasWidth / 2f + (cos(rad) * canvasWidth / 2f).toFloat()
-                val y2 = canvasHeight / 2f + (sin(rad) * canvasHeight / 2f).toFloat()
+                val x1 = safeW / 2f - (cos(rad) * safeW / 2f).toFloat()
+                val y1 = safeH / 2f - (sin(rad) * safeH / 2f).toFloat()
+                val x2 = safeW / 2f + (cos(rad) * safeW / 2f).toFloat()
+                val y2 = safeH / 2f + (sin(rad) * safeH / 2f).toFloat()
 
                 val shader = LinearGradient(
                     x1, y1, x2, y2,
@@ -62,11 +64,11 @@ class BackgroundStudioEngine {
                     Shader.TileMode.CLAMP
                 )
                 val paint = Paint().apply { this.shader = shader }
-                canvas.drawRect(0f, 0f, canvasWidth.toFloat(), canvasHeight.toFloat(), paint)
+                canvas.drawRect(0f, 0f, safeW.toFloat(), safeH.toFloat(), paint)
             }
             is BackgroundStyle.Image -> {
                 val srcRect = Rect(0, 0, background.backgroundBitmap.width, background.backgroundBitmap.height)
-                val dstRect = Rect(0, 0, canvasWidth, canvasHeight)
+                val dstRect = Rect(0, 0, safeW, safeH)
                 val paint = Paint(Paint.FILTER_BITMAP_FLAG)
                 canvas.drawBitmap(background.backgroundBitmap, srcRect, dstRect, paint)
             }
@@ -75,14 +77,14 @@ class BackgroundStudioEngine {
         // 2. Calculate Subject Transformation
         val scaledW = subjectCutout.width * placement.scale
         val scaledH = subjectCutout.height * placement.scale
-        val posX = (canvasWidth - scaledW) / 2f + placement.offsetX
-        val posY = (canvasHeight - scaledH) / 2f + placement.offsetY
+        val posX = (safeW - scaledW) / 2f + placement.offsetX
+        val posY = (safeH - scaledH) / 2f + placement.offsetY
 
         val destRect = RectF(posX, posY, posX + scaledW, posY + scaledH)
 
         // 3. Draw Shadow if requested
         if (shadow != null && shadow.opacity > 0f) {
-            val shadowPaint = Paint().apply {
+            val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 val alpha = (shadow.opacity * 255).toInt().coerceIn(0, 255)
                 color = Color.argb(alpha, Color.red(shadow.color), Color.green(shadow.color), Color.blue(shadow.color))
                 maskFilter = BlurMaskFilter(shadow.radius.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
@@ -93,13 +95,16 @@ class BackgroundStudioEngine {
                 destRect.right + shadow.dx,
                 destRect.bottom + shadow.dy
             )
-            // Extract alpha mask of subject for shadow
             val alphaMask = subjectCutout.extractAlpha()
-            canvas.drawBitmap(alphaMask, null, shadowRect, shadowPaint)
+            try {
+                canvas.drawBitmap(alphaMask, null, shadowRect, shadowPaint)
+            } finally {
+                alphaMask.recycle()
+            }
         }
 
         // 4. Draw Subject Cutout
-        val subjectPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+        val subjectPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         canvas.drawBitmap(subjectCutout, null, destRect, subjectPaint)
 
         return result

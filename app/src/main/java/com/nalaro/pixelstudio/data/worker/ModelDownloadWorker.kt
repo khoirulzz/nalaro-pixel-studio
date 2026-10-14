@@ -10,6 +10,7 @@ import androidx.work.*
 import com.nalaro.pixelstudio.data.db.AppDatabase
 import com.nalaro.pixelstudio.data.models.ModelStatus
 import com.nalaro.pixelstudio.data.network.HuggingFaceApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -32,39 +33,39 @@ class ModelDownloadWorker(
         val dao = database.modelDao()
         val model = dao.getModelById(modelId) ?: return@withContext Result.failure()
 
-        createNotificationChannel()
-        setForeground(createForegroundInfo(model.name, 0))
-
-        dao.updateDownloadProgress(modelId, ModelStatus.DOWNLOADING, 0f, null)
-
-        val storageDir = File(applicationContext.filesDir, "models")
-        val stagingDir = File(storageDir, ".staging")
-        val activeDir = File(storageDir, "active")
-
-        stagingDir.mkdirs()
-        activeDir.mkdirs()
-
-        // 1. Storage check (free bytes >= 2x model size)
-        val usableSpace = applicationContext.filesDir.usableSpace
-        val requiredSpace = (model.sizeBytes * 2).coerceAtLeast(model.sizeBytes + (50 * 1024 * 1024))
-        if (usableSpace < requiredSpace) {
-            val error = "Insufficient storage space: need ${requiredSpace / (1024 * 1024)}MB, available ${usableSpace / (1024 * 1024)}MB"
-            dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
-            return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
-        }
-
-        val stagingFile = File(stagingDir, "${model.id}.part")
-        var downloadedBytes = if (stagingFile.exists()) stagingFile.length() else 0L
-
-        // If staging file somehow exceeds target size, reset it
-        if (downloadedBytes > model.sizeBytes) {
-            stagingFile.delete()
-            downloadedBytes = 0L
-        }
-
-        val api = HuggingFaceApi.createClient()
-
         try {
+            createNotificationChannel()
+            setForegroundSafe(model.id, model.name, 0)
+
+            dao.updateDownloadProgress(modelId, ModelStatus.DOWNLOADING, 0f, null)
+
+            val storageDir = File(applicationContext.filesDir, "models")
+            val stagingDir = File(storageDir, ".staging")
+            val activeDir = File(storageDir, "active")
+
+            stagingDir.mkdirs()
+            activeDir.mkdirs()
+
+            // 1. Storage check (free bytes >= 2x model size)
+            val usableSpace = applicationContext.filesDir.usableSpace
+            val requiredSpace = (model.sizeBytes * 2).coerceAtLeast(model.sizeBytes + (50 * 1024 * 1024))
+            if (usableSpace < requiredSpace) {
+                val error = "Insufficient storage space: need ${requiredSpace / (1024 * 1024)}MB, available ${usableSpace / (1024 * 1024)}MB"
+                dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+                return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
+            }
+
+            val stagingFile = File(stagingDir, "${model.id}.part")
+            var downloadedBytes = if (stagingFile.exists()) stagingFile.length() else 0L
+
+            // If staging file somehow exceeds target size, reset it
+            if (downloadedBytes > model.sizeBytes) {
+                stagingFile.delete()
+                downloadedBytes = 0L
+            }
+
+            val api = HuggingFaceApi.createClient()
+
             val rangeHeader = if (downloadedBytes > 0) "bytes=$downloadedBytes-" else null
             val response = api.downloadModelStream(model.downloadUrl, rangeHeader)
 
@@ -87,8 +88,6 @@ class ModelDownloadWorker(
                 try {
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         if (isStopped) {
-                            outputStream.close()
-                            inputStream.close()
                             return@withContext Result.retry()
                         }
 
@@ -98,17 +97,24 @@ class ModelDownloadWorker(
                         val now = System.currentTimeMillis()
                         if (now - lastProgressUpdate > 300 || downloadedBytes >= model.sizeBytes) {
                             lastProgressUpdate = now
-                            val progressFraction = (downloadedBytes.toFloat() / model.sizeBytes.toFloat()).coerceIn(0f, 1f)
+                            val totalBytes = model.sizeBytes.coerceAtLeast(1L)
+                            val progressFraction = (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
                             val progressPercent = (progressFraction * 100).toInt()
-                            
+
                             setProgress(workDataOf(KEY_PROGRESS to progressFraction))
                             dao.updateDownloadProgress(modelId, ModelStatus.DOWNLOADING, progressFraction, null)
-                            setForeground(createForegroundInfo(model.name, progressPercent))
+                            setForegroundSafe(model.id, model.name, progressPercent)
                         }
                     }
                 } finally {
-                    outputStream.close()
-                    inputStream.close()
+                    try {
+                        outputStream.close()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        inputStream.close()
+                    } catch (_: Throwable) {
+                    }
                 }
             }
 
@@ -116,8 +122,6 @@ class ModelDownloadWorker(
             dao.updateDownloadProgress(modelId, ModelStatus.VERIFYING, 1f, null)
             val computedHash = calculateSha256(stagingFile)
 
-            // For development/mock environments where actual file on remote is not yet published,
-            // we accept if hash matches OR if local fallback mode is triggered.
             val isHashValid = computedHash.equals(model.sha256, ignoreCase = true) ||
                     model.sha256.startsWith("mock_") ||
                     model.sha256.isBlank()
@@ -125,7 +129,6 @@ class ModelDownloadWorker(
             if (!isHashValid) {
                 stagingFile.delete() // Clean corrupted staging file
                 val error = "Checksum mismatch: expected ${model.sha256}, got $computedHash"
-                // Non-destructive: existing active model is untouched!
                 dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
                 return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
             }
@@ -134,7 +137,6 @@ class ModelDownloadWorker(
             val activeFile = File(activeDir, model.filename)
             val tempRenameTarget = File(activeDir, "${model.filename}.new")
 
-            // Copy/Move staging to active directory
             if (stagingFile.renameTo(tempRenameTarget) || copyFile(stagingFile, tempRenameTarget)) {
                 stagingFile.delete()
                 if (activeFile.exists()) {
@@ -151,8 +153,11 @@ class ModelDownloadWorker(
                     timestamp = System.currentTimeMillis()
                 )
 
-                // Dismiss foreground notification
-                notificationManager.cancel(NOTIFICATION_ID_OFFSET + model.id.hashCode())
+                // Dismiss foreground notification using consistent notification ID
+                try {
+                    notificationManager.cancel(NOTIFICATION_ID_OFFSET + (model.id.hashCode() and 0xFFFF))
+                } catch (_: Throwable) {
+                }
 
                 Result.success(workDataOf(KEY_INSTALLED_PATH to activeFile.absolutePath))
             } else {
@@ -161,11 +166,23 @@ class ModelDownloadWorker(
                 Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
             }
 
-        } catch (e: Exception) {
-            // Safe rollback: previous active model remains intact
-            val error = e.localizedMessage ?: "Download interrupted"
-            dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            val error = t.localizedMessage ?: "Download interrupted"
+            try {
+                dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+            } catch (_: Throwable) {
+            }
             Result.retry()
+        }
+    }
+
+    private suspend fun setForegroundSafe(modelId: String, modelName: String, progressPercent: Int) {
+        try {
+            setForeground(createForegroundInfo(modelId, modelName, progressPercent))
+        } catch (_: Throwable) {
+            // Avoid crashing on Android 12-15 if foreground service start or notification permission is restricted
         }
     }
 
@@ -189,14 +206,15 @@ class ModelDownloadWorker(
                 }
             }
             true
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             false
         }
     }
 
-    private fun createForegroundInfo(modelName: String, progressPercent: Int): ForegroundInfo {
+    private fun createForegroundInfo(modelId: String, modelName: String, progressPercent: Int): ForegroundInfo {
         val title = "Downloading $modelName"
         val content = if (progressPercent >= 100) "Verifying checksum and installing…" else "$progressPercent%"
+        val notificationId = NOTIFICATION_ID_OFFSET + (modelId.hashCode() and 0xFFFF)
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle(title)
@@ -209,12 +227,12 @@ class ModelDownloadWorker(
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
-                NOTIFICATION_ID_OFFSET + modelName.hashCode(),
+                notificationId,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
         } else {
-            ForegroundInfo(NOTIFICATION_ID_OFFSET + modelName.hashCode(), notification)
+            ForegroundInfo(notificationId, notification)
         }
     }
 

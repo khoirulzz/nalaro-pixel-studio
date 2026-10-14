@@ -1,5 +1,9 @@
 package com.nalaro.pixelstudio.ui.screens.batch
 
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,16 +37,53 @@ data class MockBatchItem(
 
 @Composable
 fun BatchScreen(
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var isPaused by remember { mutableStateOf(false) }
 
-    val items = listOf(
-        MockBatchItem("1", "Hero-banner.png", "Saved 68% • WebP", isDone = true),
-        MockBatchItem("2", "Product-02.png", "Processing • 74%", isProcessing = true, progress = 0.74f),
-        MockBatchItem("3", "Gallery-03.jpg", "Waiting • JPG"),
-        MockBatchItem("4", "Brand-cover.png", "Waiting • PNG")
-    )
+    var items by remember {
+        mutableStateOf(
+            listOf(
+                MockBatchItem("1", "Hero-banner.png", "Saved 68% • WebP", isDone = true),
+                MockBatchItem("2", "Product-02.png", "Processing • 74%", isProcessing = true, progress = 0.74f),
+                MockBatchItem("3", "Gallery-03.jpg", "Waiting • JPG"),
+                MockBatchItem("4", "Brand-cover.png", "Waiting • PNG")
+            )
+        )
+    }
+
+    val multiPhotoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val added = uris.mapIndexed { idx, uri ->
+                var displayName = "Image-${items.size + idx + 1}.jpg"
+                try {
+                    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) {
+                            val nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (nameIdx >= 0 && !c.isNull(nameIdx)) {
+                                displayName = c.getString(nameIdx) ?: displayName
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+                MockBatchItem(
+                    id = "${System.currentTimeMillis()}_$idx",
+                    name = displayName,
+                    subtitle = "Waiting • WebP"
+                )
+            }
+            items = items + added
+        }
+    }
+
+    val completedCount = items.count { it.isDone }
+    val totalCount = items.size.coerceAtLeast(1)
+    val overallProgress = (completedCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f)
 
     Scaffold(
         topBar = {
@@ -57,7 +99,10 @@ fun BatchScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onNavigateBack() }
+                    ) {
                         Icon(Icons.Default.ChevronLeft, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(28.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -68,7 +113,7 @@ fun BatchScreen(
                     }
 
                     IconButton(
-                        onClick = { /* Add images */ },
+                        onClick = { multiPhotoPicker.launch("image/*") },
                         modifier = Modifier
                             .size(38.dp)
                             .clip(RoundedCornerShape(10.dp))
@@ -90,7 +135,6 @@ fun BatchScreen(
                 .padding(horizontal = 20.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
-            // Exact Headline from mockup-06
             Text(
                 text = "Many files.\nOne workflow.",
                 style = MaterialTheme.typography.headlineLarge.copy(
@@ -162,7 +206,7 @@ fun BatchScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Queue (4)",
+                    text = "Queue (${items.size})",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -171,7 +215,8 @@ fun BatchScreen(
                     text = "Add images +",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = AccentPrimary
+                    color = AccentPrimary,
+                    modifier = Modifier.clickable { multiPhotoPicker.launch("image/*") }
                 )
             }
 
@@ -195,7 +240,6 @@ fun BatchScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Tan thumbnail box
                                 Box(
                                     modifier = Modifier
                                         .size(46.dp)
@@ -223,7 +267,6 @@ fun BatchScreen(
                                     )
                                 }
 
-                                // Status Indicator
                                 if (item.isDone) {
                                     Icon(Icons.Default.Check, contentDescription = null, tint = SemanticSuccess, modifier = Modifier.size(20.dp))
                                 } else if (item.isProcessing) {
@@ -238,7 +281,6 @@ fun BatchScreen(
                                 }
                             }
 
-                            // Processing progress bar
                             if (item.isProcessing) {
                                 Spacer(modifier = Modifier.height(10.dp))
                                 LinearProgressIndicator(
@@ -256,18 +298,17 @@ fun BatchScreen(
                 }
             }
 
-            // Summary progress bar matching mockup-06: "1 of 4 completed" | "25%"
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("1 of 4 completed", fontSize = 13.sp, color = TextSecondary)
-                Text("25%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("$completedCount of ${items.size} completed", fontSize = 13.sp, color = TextSecondary)
+                Text("${(overallProgress * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
             Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
-                progress = { 0.25f },
+                progress = { overallProgress },
                 color = AccentPrimary,
                 trackColor = SurfaceSubtle,
                 modifier = Modifier
@@ -278,7 +319,6 @@ fun BatchScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Primary Button: Pause queue ⏸
             Button(
                 onClick = { isPaused = !isPaused },
                 colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
