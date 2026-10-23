@@ -38,7 +38,7 @@ fun ModelManagerScreen(
     val coroutineScope = rememberCoroutineScope()
     val models by repository.allModels.collectAsState(initial = emptyList())
     val isWifiOnly by repository.isWifiOnly.collectAsState(initial = true)
-    val selectedModelId by repository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
+    val selectedModelId by repository.selectedModelId.collectAsState(initial = "u2net-mobile")
 
     var modelToDownload by remember { mutableStateOf<ModelEntity?>(null) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
@@ -68,13 +68,13 @@ fun ModelManagerScreen(
                                     UiAlert(
                                         kind = AlertKind.SUCCESS,
                                         title = "Manifest model diperbarui",
-                                        message = "Daftar model ONNX terbaru berhasil disinkronkan."
+                                        message = "Daftar model diperbarui."
                                     )
                                 } else {
                                     UiAlert(
                                         kind = AlertKind.INFO,
                                         title = "Daftar model sudah terbaru",
-                                        message = "Semua definisi model sudah berada pada revisi terkini."
+                                        message = "Model terbaru tersedia."
                                     )
                                 }
                             }
@@ -162,7 +162,7 @@ fun ModelManagerScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Sudah terpasang langsung di dalam aplikasi dan siap menghapus background foto orang, produk, maupun objek secara offline tanpa perlu mengunduh model besar.",
+                            text = "Siap digunakan tanpa mengunduh model tambahan.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -199,7 +199,7 @@ fun ModelManagerScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Model ONNX terkuantisasi INT8 dari Hugging Face Hub untuk kebutuhan tingkat lanjut. Berjalan 100% lokal setelah diunduh.",
+                            text = "Model tambahan untuk pemrosesan lokal.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -261,7 +261,7 @@ fun ModelManagerScreen(
 
             item {
                 Text(
-                    text = "Tersedia (${models.size})",
+                    text = "Model (${models.size})",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = TextPrimary
                 )
