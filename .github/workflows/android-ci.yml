@@ -44,19 +44,9 @@ jobs:
       - name: Organize Built APKs
         run: |
           mkdir -p build-artifacts
-          for apk in app/build/outputs/apk/release/*.apk; do
-            [ -f "$apk" ] || continue
-            name="$(basename "$apk")"
-            cp "$apk" "build-artifacts/nalaro-pixel-studio-v1.0.1-${name}"
-          done
-          # Debug only: arm64 package is enough for internal diagnostics.
-          for apk in app/build/outputs/apk/debug/*arm64-v8a*.apk; do
-            [ -f "$apk" ] || continue
-            name="$(basename "$apk")"
-            cp "$apk" "build-artifacts/nalaro-pixel-studio-v1.0.1-${name}"
-          done
+          cp app/build/outputs/apk/release/app-release.apk build-artifacts/nalaro-pixel-studio-hot60pro-v1.0.1-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/nalaro-pixel-studio-hot60pro-v1.0.1-debug.apk
           ls -lh build-artifacts/
-          test -n "$(find build-artifacts -name '*release.apk' -print -quit)"
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -77,7 +67,7 @@ jobs:
             Android photo editor with offline AI cutout, compression, conversion, batch processing and background tools.
 
             ### 📱 Download & Install:
-            - **ARM64 APK:** Most recent Android phones (smallest installer).\n            - **ARMv7 APK:** Legacy 32-bit devices.\n            - **x86_64 APK:** Emulator and x86 Android devices.\n            - **Universal APK:** All supported devices.
+            - **ARM64 APK only:** Infinix HOT 60 Pro (X6885).\n
 
             ### ✨ Key Features:
             - **AI Background Removal**: Real-time segmentation via ONNX Runtime (U²-Net Mobile / Detail).
