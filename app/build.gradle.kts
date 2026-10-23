@@ -20,17 +20,12 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-    }
-
-    // Personal build for Infinix HOT 60 Pro (X6885).
-    // Strip non-ARM64 shared libraries without changing any AI or image features.
-    defaultConfig {
         ndk {
             abiFilters.add("arm64-v8a")
         }
     }
 
+    // Personal build for Infinix HOT 60 Pro (X6885), ARM64 only.
     buildTypes {
         release {
             isMinifyEnabled = true
