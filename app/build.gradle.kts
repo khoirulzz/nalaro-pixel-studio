@@ -23,14 +23,11 @@ android {
 
     }
 
-    // Each device only needs one ABI. Keep universal APK for sideload compatibility.
-    // ONNX Runtime and the bundled offline segmenter remain untouched.
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = true
+    // Personal build for Infinix HOT 60 Pro (X6885).
+    // Strip non-ARM64 shared libraries without changing any AI or image features.
+    defaultConfig {
+        ndk {
+            abiFilters.add("arm64-v8a")
         }
     }
 
