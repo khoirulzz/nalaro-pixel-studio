@@ -51,7 +51,7 @@ fun ModelManagerScreen(
     Scaffold(
         topBar = {
             TopAppBarCompact(
-                title = "AI Model Manager",
+                title = "Model AI",
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ChevronLeft, contentDescription = "Kembali", tint = TextPrimary, modifier = Modifier.size(28.dp))
@@ -137,13 +137,13 @@ fun ModelManagerScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = "Built-in Offline AI Engine",
+                                        text = "AI Bawaan",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = TextPrimary
                                     )
                                     Text(
-                                        text = "On-Device Subject Segmenter + Smart Matting (<5 MB)",
+                                        text = "Tersedia offline",
                                         fontSize = 11.sp,
                                         color = SemanticSuccess,
                                         fontWeight = FontWeight.SemiBold
@@ -191,7 +191,7 @@ fun ModelManagerScreen(
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Model ONNX Tambahan (Opsional)",
+                                text = "Model tambahan",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
@@ -215,7 +215,7 @@ fun ModelManagerScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Penyimpanan Model ONNX",
+                                    text = "Penyimpanan",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = TextMuted
                                 )
@@ -261,7 +261,7 @@ fun ModelManagerScreen(
 
             item {
                 Text(
-                    text = "Model ONNX Tersedia (${models.size})",
+                    text = "Tersedia (${models.size})",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = TextPrimary
                 )
