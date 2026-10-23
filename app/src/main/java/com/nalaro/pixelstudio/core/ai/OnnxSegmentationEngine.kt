@@ -67,8 +67,8 @@ class OnnxSegmentationEngine(private val context: Context) {
 
     suspend fun segmentBackground(
         sourceBitmap: Bitmap,
-        inputWidth: Int = 1024,
-        inputHeight: Int = 1024
+        inputWidth: Int = 320,
+        inputHeight: Int = 320
     ): Bitmap {
         return segmentBackgroundDetailed(
             sourceBitmap = sourceBitmap,
