@@ -44,15 +44,19 @@ jobs:
       - name: Organize Built APKs
         run: |
           mkdir -p build-artifacts
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk build-artifacts/nalaro-pixel-studio-v1.0.0-release.apk
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk build-artifacts/nalaro-pixel-studio-v1.0.0-release.apk
-          fi
-          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/nalaro-pixel-studio-v1.0.0-debug.apk
-          fi
-          ls -la build-artifacts/
+          for apk in app/build/outputs/apk/release/*.apk; do
+            [ -f "$apk" ] || continue
+            name="$(basename "$apk")"
+            cp "$apk" "build-artifacts/nalaro-pixel-studio-v1.0.1-${name}"
+          done
+          # Debug only: arm64 package is enough for internal diagnostics.
+          for apk in app/build/outputs/apk/debug/*arm64-v8a*.apk; do
+            [ -f "$apk" ] || continue
+            name="$(basename "$apk")"
+            cp "$apk" "build-artifacts/nalaro-pixel-studio-v1.0.1-${name}"
+          done
+          ls -lh build-artifacts/
+          test -n "$(find build-artifacts -name '*release.apk' -print -quit)"
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -65,19 +69,18 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "Nalaro Pixel Studio v1.0.0"
+          tag_name: v1.0.1
+          name: "Nalaro Pixel Studio v1.0.1"
           body: |
-            ## Nalaro Pixel Studio v1.0.0 🎉
+            ## Nalaro Pixel Studio v1.0.1 🎉
 
-            Official Android application release for **Nalaro Pixel Studio** — AI-powered On-Device Background Removal & Precision Image Optimization.
+            Android photo editor with offline AI cutout, compression, conversion, batch processing and background tools.
 
             ### 📱 Download & Install:
-            - **`nalaro-pixel-studio-v1.0.0-release.apk`** *(Recommended)*: Production build with ProGuard/R8 code optimization and resource shrinking. Pre-signed with debug key for immediate, frictionless installation on Android devices (Android 8.0+ / API 26-35).
-            - **`nalaro-pixel-studio-v1.0.0-debug.apk`**: Debug build with active logging.
+            - **ARM64 APK:** Most recent Android phones (smallest installer).\n            - **ARMv7 APK:** Legacy 32-bit devices.\n            - **x86_64 APK:** Emulator and x86 Android devices.\n            - **Universal APK:** All supported devices.
 
             ### ✨ Key Features:
-            - **AI Background Removal**: Real-time segmentation via ONNX Runtime Mobile (BiRefNet Lite & RMBG 1.4).
+            - **AI Background Removal**: Real-time segmentation via ONNX Runtime (U²-Net Mobile / Detail).
             - **Studio Canvas**: Custom solid, linear gradient, transparent, or gallery backdrop replacement.
             - **Smart Optimizer**: Multi-format converter (JPEG, WebP, PNG) with target file-size compression & SSIM quality guard.
             - **Batch Processor**: Process multiple assets in bulk with unified export settings.
