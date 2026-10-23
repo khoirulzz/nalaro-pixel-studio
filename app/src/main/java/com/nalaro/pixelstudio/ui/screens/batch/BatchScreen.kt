@@ -54,22 +54,22 @@ enum class BatchWorkflowPreset(
     val targetFormat: ImageFormat
 ) {
     SMART_COMPRESS_WEBP(
-        title = "Smart Compress • WebP",
+        title = "Kompresi · WebP",
         subtitle = "Kompresi cerdas SSIM • Pertahankan resolusi • Hapus GPS",
         targetFormat = ImageFormat.WEBP
     ),
     REMOVE_BG_PNG(
-        title = "Remove Background • PNG",
+        title = "Hapus Latar · PNG",
         subtitle = "Hapus latar otomatis (On-Device AI / Smart Cutout) • Transparan",
         targetFormat = ImageFormat.PNG
     ),
     CONVERT_JPEG(
-        title = "Convert Format • JPEG",
+        title = "Konversi · JPEG",
         subtitle = "Konversi massal ke JPEG berkualitas tinggi • Hapus GPS",
         targetFormat = ImageFormat.JPEG
     ),
     CONVERT_PNG(
-        title = "Convert Format • PNG",
+        title = "Konversi · PNG",
         subtitle = "Konversi massal ke PNG Lossless • Pertahankan transparansi",
         targetFormat = ImageFormat.PNG
     )
@@ -182,7 +182,7 @@ fun BatchScreen(
                         Icon(Icons.Default.ChevronLeft, contentDescription = "Kembali", tint = TextPrimary, modifier = Modifier.size(28.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Batch Processing",
+                            text = "Batch",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = TextPrimary
                         )
@@ -252,7 +252,7 @@ fun BatchScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "MODE WORKFLOW BATCH",
+                        text = "Mode",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -314,7 +314,7 @@ fun BatchScreen(
                     color = TextPrimary
                 )
                 Text(
-                    text = "Tambah Gambar +",
+                    text = "Tambah",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = AccentPrimary,
@@ -359,13 +359,13 @@ fun BatchScreen(
                         }
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "Antrean Batch Masih Kosong",
+                            text = "Belum ada foto",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = TextPrimary
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Pilih beberapa gambar sekaligus dari Galeri untuk dikompresi, dihapus latarnya, atau dikonversi otomatis ke Pictures/PixelStudio.",
+                            text = "Pilih beberapa foto untuk diproses.",
                             fontSize = 13.sp,
                             color = TextSecondary,
                             textAlign = TextAlign.Center
@@ -378,7 +378,7 @@ fun BatchScreen(
                         ) {
                             Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Pilih Beberapa Gambar", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Buka Foto", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

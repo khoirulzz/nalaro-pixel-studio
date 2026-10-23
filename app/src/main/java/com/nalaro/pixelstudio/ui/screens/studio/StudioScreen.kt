@@ -52,10 +52,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class StudioTool(val routeKey: String, val label: String, val shortLabel: String, val icon: ImageVector) {
-    COMPRESS("compress", "Smart Compression", "Compress", Icons.Outlined.Layers),
-    REMOVE_BG("remove_bg", "Remove Background", "Remove BG", Icons.Outlined.ContentCut),
-    BACKGROUND("background", "Background Studio", "Background", Icons.Outlined.Tonality),
-    CONVERT("convert", "Image Converter", "Convert", Icons.Outlined.SwapHoriz)
+    COMPRESS("compress", "Kompresi", "Kompresi", Icons.Outlined.Layers),
+    REMOVE_BG("remove_bg", "Hapus Latar", "Hapus Latar", Icons.Outlined.ContentCut),
+    BACKGROUND("background", "Latar", "Latar", Icons.Outlined.Tonality),
+    CONVERT("convert", "Konversi", "Konversi", Icons.Outlined.SwapHoriz)
 }
 
 @Composable
@@ -83,7 +83,7 @@ fun StudioScreen(
     }
 
     val allModels by modelRepository.allModels.collectAsState(initial = emptyList())
-    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
+    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "u2net-mobile")
 
     // Production Image State (starts completely clean, no dummy/sample image)
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -108,7 +108,7 @@ fun StudioScreen(
     var compressionResult by remember { mutableStateOf<CompressionResult?>(null) }
 
     // Remove BG & Brush State
-    var isPrecisionModel by remember { mutableStateOf(true) }
+    var isPrecisionModel by remember { mutableStateOf(false) }
     var edgeRefinementMode by remember { mutableStateOf(EdgeRefinementMode.NATURAL) }
     var activeBrushMode by remember { mutableStateOf(BrushMode.ERASE) }
     var isBrushTouchEnabled by remember { mutableStateOf(false) }
@@ -236,139 +236,70 @@ fun StudioScreen(
     Scaffold(
         topBar = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(SurfaceBase)
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth().background(SurfaceRaised).statusBarsPadding()
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onNavigateBack() }
-                    ) {
-                        Icon(
-                            Icons.Default.ChevronLeft,
-                            contentDescription = "Kembali",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = activeTool.label,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = TextPrimary
-                        )
+                    IconButton(onClick = onNavigateBack, modifier = Modifier.size(42.dp)) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Kembali", tint = TextPrimary)
                     }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (originalBitmap != null) {
-                            IconButton(
-                                onClick = {
-                                    originalBitmap = null
-                                    processedBitmap = null
-                                    cutoutBitmap = null
-                                    processedBytes = null
-                                    processedSizeBytes = 0L
-                                    hasProcessedResult = false
-                                    compressionResult = null
-                                    currentAlert = UiAlert(
-                                        kind = AlertKind.INFO,
-                                        title = "Kanvas dikosongkan",
-                                        message = "Silakan pilih gambar baru dari galeri untuk diproses."
-                                    )
-                                },
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(SurfaceRaised)
-                                    .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.DeleteSweep,
-                                    contentDescription = "Kosongkan kanvas",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                    Text(
+                        text = activeTool.label,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = TextPrimary
+                    )
+                    if (originalBitmap != null) {
+                        IconButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+                            Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "Ganti foto", tint = TextSecondary)
                         }
-
-                        Button(
-                            onClick = { photoPickerLauncher.launch("image/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceRaised),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .height(38.dp)
-                                .border(1.dp, LineDivider, RoundedCornerShape(10.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddPhotoAlternate,
-                                contentDescription = "Pilih Gambar",
-                                tint = AccentPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (originalBitmap == null) "Pilih Foto" else "Ganti Foto",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
+                        IconButton(onClick = {
+                            originalBitmap = null
+                            processedBitmap = null
+                            cutoutBitmap = null
+                            processedBytes = null
+                            processedSizeBytes = 0L
+                            hasProcessedResult = false
+                            compressionResult = null
+                        }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Tutup foto", tint = TextSecondary)
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Quick Tool Switcher Bar (switch tools without losing current image/cutout)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     StudioTool.values().forEach { tool ->
-                        val isSelected = activeTool == tool
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (isSelected) AccentPrimary else SurfaceRaised)
-                                .border(
-                                    1.dp,
-                                    if (isSelected) AccentPrimary else LineDivider,
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable {
-                                    activeTool = tool
-                                    isBrushTouchEnabled = false
-                                    if (tool == StudioTool.REMOVE_BG) {
-                                        selectedOutputFormat = ImageFormat.PNG
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        val selected = activeTool == tool
+                        Column(
+                            modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable {
+                                activeTool = tool
+                                isBrushTouchEnabled = false
+                                if (tool == StudioTool.REMOVE_BG) selectedOutputFormat = ImageFormat.PNG
+                            },
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = tool.icon,
-                                contentDescription = null,
-                                tint = if (isSelected) Color.White else TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = tool.shortLabel,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else TextPrimary
-                            )
+                            Row(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(tool.icon, contentDescription = null, modifier = Modifier.size(16.dp),
+                                    tint = if (selected) AccentPrimary else TextSecondary)
+                                Text(tool.shortLabel, fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (selected) TextPrimary else TextSecondary)
+                            }
+                            Box(modifier = Modifier.height(2.dp).fillMaxWidth().background(
+                                if (selected) AccentPrimary else Color.Transparent))
                         }
                     }
                 }
+                HorizontalDivider(color = LineDivider, thickness = 1.dp)
             }
         },
         containerColor = SurfaceBase,
@@ -395,62 +326,29 @@ fun StudioScreen(
 
             // Main Canvas Area or Empty State
             if (originalBitmap == null) {
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(270.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .clickable { photoPickerLauncher.launch("image/*") }
-                        .border(1.5.dp, LineDivider, RoundedCornerShape(24.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(340.dp)
+                        .clip(RoundedCornerShape(14.dp)).background(SurfaceRaised)
+                        .border(1.dp, LineDivider, RoundedCornerShape(14.dp))
+                        .clickable { photoPickerLauncher.launch("image/*") },
+                    contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                        modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(AccentSoft),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.AddPhotoAlternate,
-                                contentDescription = null,
-                                tint = AccentPrimary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "Pilih Gambar untuk Diproses",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            ),
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Ketuk di sini untuk memilih foto dari Galeri.\nSemua pemrosesan berjalan 100% lokal di perangkatmu.",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                            color = TextSecondary,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null,
+                            tint = TextMuted, modifier = Modifier.size(38.dp))
+                        Text("Belum ada foto", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                         Button(
                             onClick = { photoPickerLauncher.launch("image/*") },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentPrimary),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.height(44.dp),
+                            contentPadding = PaddingValues(horizontal = 22.dp)
                         ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buka Galeri Foto", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Buka Foto", fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -490,47 +388,16 @@ fun StudioScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Top Overlay Badges (Preview Mode + View Mode Toggle)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.TopCenter)
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val badgeLeft = when {
-                            hasProcessedResult -> "HASIL SIAP SIMPAN ✓"
-                            activeTool == StudioTool.REMOVE_BG -> "CUTOUT PREVIEW"
-                            activeTool == StudioTool.BACKGROUND -> "LIVE PREVIEW"
-                            else -> "PRATINJAU"
-                        }
+                    if (hasProcessedResult && !isBrushTouchEnabled) {
                         Text(
-                            text = badgeLeft,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
+                            text = if (showFullResultOnly) "Bandingkan" else "Hasil",
+                            fontSize = 12.sp,
                             color = Color.White,
-                            modifier = Modifier
-                                .background(
-                                    if (hasProcessedResult) SemanticSuccess.copy(alpha = 0.9f)
-                                    else Color.Black.copy(alpha = 0.6f),
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-
-                        // Toggle between Split Compare vs Full Result
-                        Text(
-                            text = if (showFullResultOnly) "Mode: Hasil Penuh ⇄" else "Mode: Bandingkan ⇄",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
-                            modifier = Modifier
+                            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.6f))
+                                .background(Color.Black.copy(alpha = 0.67f))
                                 .clickable { showFullResultOnly = !showFullResultOnly }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
                         )
                     }
 
@@ -611,7 +478,7 @@ fun StudioScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = "Hasil Pemrosesan Siap Disimpan",
+                                        text = "Hasil",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = TextPrimary
@@ -656,7 +523,7 @@ fun StudioScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Format simpan:",
+                                text = "Format",
                                 fontSize = 12.sp,
                                 color = TextSecondary
                             )
@@ -695,13 +562,13 @@ fun StudioScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Ingin memberi warna atau foto latar baru?",
+                                    text = "Ganti latar",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = TextPrimary
                                 )
                                 Text(
-                                    text = "Ganti Background →",
+                                    text = "Buka →",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = AccentPrimary
@@ -773,7 +640,7 @@ fun StudioScreen(
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Simpan ke Galeri", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("Simpan", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -836,7 +703,8 @@ fun StudioScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Tool-Specific Control Panel
+            // Controls are contextual: the empty editor only needs a photo picker.
+            if (originalBitmap != null) {
             when (activeTool) {
                 // S02: SMART COMPRESSION
                 StudioTool.COMPRESS -> {
@@ -861,7 +729,7 @@ fun StudioScreen(
                     ) {
                         listOf(
                             Pair(CompressionMode.LOSSLESS, "Lossless"),
-                            Pair(CompressionMode.SMART, "✦ Smart"),
+                            Pair(CompressionMode.SMART, "Smart"),
                             Pair(CompressionMode.MAXIMUM, "Maximum")
                         ).forEach { (mode, label) ->
                             val isSelected = compressionMode == mode
@@ -972,7 +840,7 @@ fun StudioScreen(
                             .height(54.dp)
                     ) {
                         Text(
-                            text = if (originalBitmap == null) "Pilih Gambar & Kompres ↗" else "Proses Kompresi ↗",
+                            text = if (originalBitmap == null) "Buka Foto" else "Kompres",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -982,99 +850,74 @@ fun StudioScreen(
 
                 // S03: AI REMOVE BACKGROUND
                 StudioTool.REMOVE_BG -> {
-                    val targetModelId = if (isPrecisionModel) "u2net-precision-matting" else selectedModelId
+                    val targetModelId = if (isPrecisionModel) "u2net-full" else "u2net-mobile"
                     val activeModel = allModels.firstOrNull { it.id == targetModelId }
                         ?: allModels.firstOrNull { it.status == ModelStatus.INSTALLED }
                     val isModelInstalled = activeModel?.status == ModelStatus.INSTALLED && !activeModel.localFilePath.isNullOrBlank()
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = "Engine penghapus latar", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Text(
-                                text = if (isModelInstalled) {
-                                    "ONNX Aktif (${activeModel?.name})"
-                                } else {
-                                    "On-Device AI + Smart Matting (Aktif tanpa kuota)"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SemanticSuccess
-                            )
-                        }
-                        Text(
-                            text = "Kelola Model ↗",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentPrimary,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onNavigateToModelManager() }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(SurfaceSubtle)
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            .background(SurfaceRaised)
+                            .border(1.dp, LineDivider, RoundedCornerShape(14.dp))
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (!isPrecisionModel) SurfaceRaised else Color.Transparent)
-                                .clickable { isPrecisionModel = false }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("⚡ Cepat", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("Model", fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(if (isModelInstalled) "ONNX" else "Bawaan",
+                                color = TextMuted, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("Kelola", color = AccentPrimary, fontSize = 12.sp,
+                                modifier = Modifier.clickable { onNavigateToModelManager() }
+                                    .padding(6.dp))
                         }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (isPrecisionModel) SurfaceRaised else Color.Transparent)
-                                .clickable { isPrecisionModel = true }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
+                                .background(SurfaceSubtle).padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text("✧ Presisi Tinggi", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Kehalusan tepi (Edge)", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            EdgeRefinementMode.values().forEach { mode ->
-                                val selected = edgeRefinementMode == mode
+                            listOf(false to "Cepat", true to "Detail").forEach { (precision, label) ->
+                                val selected = isPrecisionModel == precision
                                 Box(
-                                    modifier = Modifier
+                                    modifier = Modifier.weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (selected) AccentSoft else SurfaceRaised)
-                                        .border(1.dp, if (selected) AccentPrimary else LineDivider, RoundedCornerShape(8.dp))
-                                        .clickable { edgeRefinementMode = mode }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        .background(if (selected) SurfaceRaised else Color.Transparent)
+                                        .clickable { isPrecisionModel = precision }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = mode.label,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selected) AccentPrimary else TextSecondary
-                                    )
+                                    Text(label, fontSize = 13.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (selected) TextPrimary else TextSecondary)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = LineDivider)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Tepi", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                EdgeRefinementMode.values().forEach { mode ->
+                                    val selected = edgeRefinementMode == mode
+                                    Box(
+                                        modifier = Modifier.clip(RoundedCornerShape(7.dp))
+                                            .background(if (selected) AccentSoft else SurfaceSubtle)
+                                            .clickable { edgeRefinementMode = mode }
+                                            .padding(horizontal = 9.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(mode.label, fontSize = 11.sp,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selected) AccentPrimary else TextSecondary)
+                                    }
                                 }
                             }
                         }
@@ -1088,7 +931,7 @@ fun StudioScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Kuas perapi manual",
+                                text = "Kuas",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
@@ -1101,7 +944,7 @@ fun StudioScreen(
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = if (isBrushTouchEnabled) "Kuas Aktif ✓" else "Aktifkan Kuas",
+                                    text = if (isBrushTouchEnabled) "Aktif" else "Gunakan",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isBrushTouchEnabled) Color.White else TextSecondary
@@ -1157,14 +1000,16 @@ fun StudioScreen(
                             coroutineScope.launch {
                                 isProcessing = true
                                 try {
-                                    val modelPath = activeModel?.localFilePath
+                                    val modelPath = activeModel?.takeIf { it.status == ModelStatus.INSTALLED }?.localFilePath
                                     if (!modelPath.isNullOrBlank()) {
                                         segmentationEngine.loadModel(modelPath)
                                     }
                                     val outcome = segmentationEngine.segmentBackgroundDetailed(
                                         sourceBitmap = bmp,
                                         edgeMode = edgeRefinementMode,
-                                        highPrecision = isPrecisionModel
+                                        highPrecision = isPrecisionModel,
+                                        inputWidth = 320,
+                                        inputHeight = 320
                                     )
                                     cutoutBitmap = outcome.bitmap
                                     processedBitmap = outcome.bitmap
@@ -1178,8 +1023,8 @@ fun StudioScreen(
                                     showFullResultOnly = true
                                     currentAlert = UiAlert(
                                         kind = AlertKind.SUCCESS,
-                                        title = "Background berhasil dihapus!",
-                                        message = "Diproses dengan ${outcome.engineLabel} (${outcome.elapsedMs} ms). Hasil langsung siap disimpan di atas."
+                                        title = "Latar dihapus",
+                                        message = "${outcome.engineLabel} · ${outcome.elapsedMs} ms"
                                     )
                                 } catch (t: Throwable) {
                                     currentAlert = UiAlert(
@@ -1199,7 +1044,7 @@ fun StudioScreen(
                             .height(54.dp)
                     ) {
                         Text(
-                            text = if (originalBitmap == null) "Pilih Gambar & Hapus BG ✦" else "Hapus Background ✦",
+                            text = if (originalBitmap == null) "Buka Foto" else "Hapus Latar",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -1501,13 +1346,15 @@ fun StudioScreen(
                             .height(54.dp)
                     ) {
                         Text(
-                            text = if (originalBitmap == null) "Pilih Gambar & Konversi →" else "Konversi ke ${selectedOutputFormat.name} →",
+                            text = if (originalBitmap == null) "Buka Foto" else "Konversi",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
+            }
+
             }
 
             Spacer(modifier = Modifier.height(40.dp))

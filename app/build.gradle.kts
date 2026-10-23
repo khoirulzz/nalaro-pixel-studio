@@ -13,19 +13,19 @@ android {
         applicationId = "com.nalaro.pixelstudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
-
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
+            abiFilters.add("arm64-v8a")
         }
     }
 
+    // Personal build for Infinix HOT 60 Pro (X6885), ARM64 only.
     buildTypes {
         release {
             isMinifyEnabled = true
