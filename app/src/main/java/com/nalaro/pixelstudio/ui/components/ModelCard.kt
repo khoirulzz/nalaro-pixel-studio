@@ -57,7 +57,7 @@ fun ModelCard(
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary
                         )
-                        if (model.isRecommended) {
+                        if (false) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "FAST",
@@ -70,7 +70,7 @@ fun ModelCard(
                         }
                     }
                     Text(
-                        text = "v${model.version} • rev: ${model.remoteRevision.take(8)}",
+                        text = "${formatFileSize(model.sizeBytes)} · ${model.license}",
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         color = TextMuted
@@ -116,12 +116,12 @@ fun ModelCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Size: ${formatFileSize(model.sizeBytes)}",
+                    text = "${formatFileSize(model.sizeBytes)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary
                 )
                 Text(
-                    text = "RAM: ~${model.ramRequirementMb} MB",
+                    text = "~${model.ramRequirementMb} MB RAM",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary
                 )
@@ -146,7 +146,7 @@ fun ModelCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Downloading from Hugging Face Hub… ${(model.downloadProgress * 100).toInt()}%",
+                    text = "${(model.downloadProgress * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextMuted
                 )
@@ -212,9 +212,9 @@ fun ModelCard(
                         if (isSelected) {
                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Active Model")
+                            Text("Aktif")
                         } else {
-                            Text("Use Model")
+                            Text("Gunakan")
                         }
                     }
                 }
