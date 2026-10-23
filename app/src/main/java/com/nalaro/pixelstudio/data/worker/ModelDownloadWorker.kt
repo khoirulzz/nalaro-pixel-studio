@@ -75,7 +75,22 @@ class ModelDownloadWorker(
                 return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
             }
 
+            if (response.code() == 416 && downloadedBytes != model.sizeBytes) {
+                stagingFile.delete()
+                val error = "Unduhan parsial tidak sesuai. Coba ulangi."
+                dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+                return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
+            }
+            if (response.code() == 200 && downloadedBytes > 0L) {
+                stagingFile.delete()
+                downloadedBytes = 0L
+            }
             val responseBody = response.body()
+            if (response.isSuccessful && responseBody == null) {
+                val error = "Server tidak mengirim file model."
+                dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+                return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
+            }
             if (responseBody != null) {
                 val inputStream: InputStream = responseBody.byteStream()
                 val outputStream = RandomAccessFile(stagingFile, "rw")
@@ -120,10 +135,16 @@ class ModelDownloadWorker(
 
             // 2. SHA-256 Checksum Verification
             dao.updateDownloadProgress(modelId, ModelStatus.VERIFYING, 1f, null)
+            val receivedBytes = stagingFile.length()
+            if (receivedBytes != model.sizeBytes) {
+                stagingFile.delete()
+                val error = "Ukuran unduhan tidak cocok ($receivedBytes / ${model.sizeBytes} byte)."
+                dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+                return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
+            }
             val computedHash = calculateSha256(stagingFile)
 
             val isHashValid = computedHash.equals(model.sha256, ignoreCase = true) ||
-                    model.sha256.startsWith("mock_") ||
                     model.sha256.isBlank()
 
             if (!isHashValid) {
@@ -142,7 +163,11 @@ class ModelDownloadWorker(
                 if (activeFile.exists()) {
                     activeFile.delete()
                 }
-                tempRenameTarget.renameTo(activeFile)
+                if (!tempRenameTarget.renameTo(activeFile) || !activeFile.exists()) {
+                    val error = "Gagal memasang model."
+                    dao.updateDownloadProgress(modelId, ModelStatus.ERROR, 0f, error)
+                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to error))
+                }
 
                 // 4. Update Database
                 dao.markInstalled(

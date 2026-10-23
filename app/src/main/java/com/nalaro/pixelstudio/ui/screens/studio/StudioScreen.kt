@@ -83,7 +83,7 @@ fun StudioScreen(
     }
 
     val allModels by modelRepository.allModels.collectAsState(initial = emptyList())
-    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
+    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "u2net-mobile")
 
     // Production Image State (starts completely clean, no dummy/sample image)
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -982,7 +982,7 @@ fun StudioScreen(
 
                 // S03: AI REMOVE BACKGROUND
                 StudioTool.REMOVE_BG -> {
-                    val targetModelId = if (isPrecisionModel) "u2net-precision-matting" else selectedModelId
+                    val targetModelId = if (isPrecisionModel) "u2net-full" else "u2net-mobile"
                     val activeModel = allModels.firstOrNull { it.id == targetModelId }
                         ?: allModels.firstOrNull { it.status == ModelStatus.INSTALLED }
                     val isModelInstalled = activeModel?.status == ModelStatus.INSTALLED && !activeModel.localFilePath.isNullOrBlank()
@@ -1035,7 +1035,7 @@ fun StudioScreen(
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("⚡ Cepat", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("Cepat", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
                         }
                         Box(
                             modifier = Modifier
@@ -1046,7 +1046,7 @@ fun StudioScreen(
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✧ Presisi Tinggi", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("Detail", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
                         }
                     }
 
@@ -1164,7 +1164,9 @@ fun StudioScreen(
                                     val outcome = segmentationEngine.segmentBackgroundDetailed(
                                         sourceBitmap = bmp,
                                         edgeMode = edgeRefinementMode,
-                                        highPrecision = isPrecisionModel
+                                        highPrecision = isPrecisionModel,
+                                        inputWidth = 320,
+                                        inputHeight = 320
                                     )
                                     cutoutBitmap = outcome.bitmap
                                     processedBitmap = outcome.bitmap
