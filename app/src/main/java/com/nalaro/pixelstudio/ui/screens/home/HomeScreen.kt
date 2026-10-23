@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.nalaro.pixelstudio.R
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -65,14 +67,14 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(AccentPrimary),
+                                .background(Color.Transparent),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.CropFree,
+                                painter = painterResource(R.drawable.ic_pixel_studio_mark),
                                 contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(36.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
