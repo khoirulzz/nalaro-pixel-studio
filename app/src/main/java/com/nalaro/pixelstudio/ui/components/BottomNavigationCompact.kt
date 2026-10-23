@@ -17,10 +17,10 @@ import androidx.compose.ui.unit.sp
 import com.nalaro.pixelstudio.ui.theme.*
 
 enum class AppTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Outlined.Home),
+    HOME("Beranda", Icons.Outlined.Home),
     STUDIO("Studio", Icons.Outlined.AutoFixHigh),
-    BATCH("Batch", Icons.Outlined.Menu),
-    LIBRARY("Library", Icons.Outlined.GridView)
+    BATCH("Batch", Icons.Outlined.Layers),
+    LIBRARY("Galeri", Icons.Outlined.GridView)
 }
 
 @Composable
