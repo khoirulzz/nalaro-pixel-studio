@@ -83,7 +83,7 @@ fun StudioScreen(
     }
 
     val allModels by modelRepository.allModels.collectAsState(initial = emptyList())
-    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "birefnet-general-lite")
+    val selectedModelId by modelRepository.selectedModelId.collectAsState(initial = "u2net-mobile")
 
     // Production Image State (starts completely clean, no dummy/sample image)
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
