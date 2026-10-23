@@ -69,7 +69,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AllInclusive,
+                                imageVector = Icons.Outlined.CropFree,
                                 contentDescription = null,
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
@@ -125,7 +125,7 @@ fun HomeScreen(
             item {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Everything your\nimages need.",
+                    text = "Pixel Studio",
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
@@ -135,7 +135,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Hapus latar, kompres, dan konversi foto.\n100% lokal dan privat di perangkatmu.",
+                    text = "Edit foto · Offline",
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     color = TextSecondary
                 )
@@ -168,7 +168,7 @@ fun HomeScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "FITUR UNGGULAN",
+                                    text = "REMOVE BG",
                                     fontSize = 10.sp,
                                     letterSpacing = 1.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -176,7 +176,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Instant\nRemove BG",
+                                    text = "Hapus Latar",
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Bold,
                                     lineHeight = 28.sp,
@@ -184,7 +184,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Potongan rapi dengan On-Device AI.",
+                                    text = "Hasil transparan, siap diekspor.",
                                     fontSize = 12.sp,
                                     color = Color(0xFF5A4938)
                                 )
@@ -196,7 +196,7 @@ fun HomeScreen(
                                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                                 ) {
                                     Text(
-                                        "Buka Studio ↗",
+                                        "Buka Editor",
                                         color = Color(0xFF2C2218),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
@@ -231,7 +231,7 @@ fun HomeScreen(
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "OFFLINE AI",
+                                        text = "AI LOKAL",
                                         fontSize = 9.sp,
                                         letterSpacing = 1.sp,
                                         fontWeight = FontWeight.Bold,
@@ -244,7 +244,7 @@ fun HomeScreen(
                 }
             }
 
-            // Section "Alat Studio"
+            // Section "Editor"
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -258,7 +258,7 @@ fun HomeScreen(
                         color = TextPrimary
                     )
                     Text(
-                        text = "Batch Queue ↗",
+                        text = "Batch",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = AccentPrimary,
@@ -397,12 +397,12 @@ fun HomeScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "AI Model Manager",
+                                text = "Model AI",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Built-in Offline AI aktif • Opsi model ONNX tambahan",
+                                text = "Kelola model offline",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TextSecondary
                             )
@@ -425,13 +425,13 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Hasil Tersimpan Terbaru",
+                            text = "Terbaru",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
                         Text(
-                            text = "Lihat Semua ↗",
+                            text = "Lihat semua",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = AccentPrimary,
