@@ -36,7 +36,6 @@ class ModelRepository private constructor(context: Context) {
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
         try {
-            val existing = modelDao.getAllModels()
             seedFromAssets()
         } catch (e: CancellationException) {
             throw e
@@ -124,6 +123,7 @@ class ModelRepository private constructor(context: Context) {
         }
 
         modelDao.insertOrUpdateAll(entities)
+        modelDao.deleteExcept(manifest.models.map { it.id })
     }
 
     suspend fun enqueueDownload(modelId: String) = withContext(Dispatchers.IO) {
