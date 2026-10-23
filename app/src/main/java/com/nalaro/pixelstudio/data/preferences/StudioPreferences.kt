@@ -40,7 +40,7 @@ class StudioPreferences(context: Context) {
     }
 
     val selectedModelId: Flow<String> = safePreferencesFlow.map { prefs ->
-        prefs[Keys.SELECTED_MODEL_ID] ?: "birefnet-general-lite"
+        prefs[Keys.SELECTED_MODEL_ID] ?: "u2net-mobile"
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
