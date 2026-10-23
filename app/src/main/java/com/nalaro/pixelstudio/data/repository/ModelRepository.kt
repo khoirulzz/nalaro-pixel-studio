@@ -37,9 +37,7 @@ class ModelRepository private constructor(context: Context) {
     suspend fun initialize() = withContext(Dispatchers.IO) {
         try {
             val existing = modelDao.getAllModels()
-            if (existing.isEmpty()) {
-                seedFromAssets()
-            }
+            seedFromAssets()
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -77,16 +75,8 @@ class ModelRepository private constructor(context: Context) {
             // Record check timestamp upfront so offline/404 responses still respect the 6h throttle
             preferences.recordUpdateCheckTime(now)
 
-            val manifestUrl = HuggingFaceApi.getManifestUrl()
-            val response = api.getManifest(manifestUrl)
-
-            if (response.isSuccessful && response.body() != null) {
-                val manifest = response.body()!!
-                syncManifestWithDatabase(manifest)
-                true
-            } else {
-                false
-            }
+            seedFromAssets()
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
