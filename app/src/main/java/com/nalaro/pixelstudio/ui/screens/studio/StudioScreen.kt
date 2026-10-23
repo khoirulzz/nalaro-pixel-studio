@@ -855,94 +855,69 @@ fun StudioScreen(
                         ?: allModels.firstOrNull { it.status == ModelStatus.INSTALLED }
                     val isModelInstalled = activeModel?.status == ModelStatus.INSTALLED && !activeModel.localFilePath.isNullOrBlank()
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(text = "Engine penghapus latar", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Text(
-                                text = if (isModelInstalled) {
-                                    "ONNX Aktif (${activeModel?.name})"
-                                } else {
-                                    "On-Device AI + Smart Matting (Aktif tanpa kuota)"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SemanticSuccess
-                            )
-                        }
-                        Text(
-                            text = "Kelola Model ↗",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AccentPrimary,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onNavigateToModelManager() }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(SurfaceSubtle)
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            .background(SurfaceRaised)
+                            .border(1.dp, LineDivider, RoundedCornerShape(14.dp))
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (!isPrecisionModel) SurfaceRaised else Color.Transparent)
-                                .clickable { isPrecisionModel = false }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Cepat", fontWeight = FontWeight.Bold, color = if (!isPrecisionModel) TextPrimary else TextSecondary)
+                            Text("Model", fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(if (isModelInstalled) "ONNX" else "Bawaan",
+                                color = TextMuted, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("Kelola", color = AccentPrimary, fontSize = 12.sp,
+                                modifier = Modifier.clickable { onNavigateToModelManager() }
+                                    .padding(6.dp))
                         }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(if (isPrecisionModel) SurfaceRaised else Color.Transparent)
-                                .clickable { isPrecisionModel = true }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
+                                .background(SurfaceSubtle).padding(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Text("Detail", fontWeight = FontWeight.Bold, color = if (isPrecisionModel) TextPrimary else TextSecondary)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Kehalusan tepi (Edge)", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            EdgeRefinementMode.values().forEach { mode ->
-                                val selected = edgeRefinementMode == mode
+                            listOf(false to "Cepat", true to "Detail").forEach { (precision, label) ->
+                                val selected = isPrecisionModel == precision
                                 Box(
-                                    modifier = Modifier
+                                    modifier = Modifier.weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (selected) AccentSoft else SurfaceRaised)
-                                        .border(1.dp, if (selected) AccentPrimary else LineDivider, RoundedCornerShape(8.dp))
-                                        .clickable { edgeRefinementMode = mode }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        .background(if (selected) SurfaceRaised else Color.Transparent)
+                                        .clickable { isPrecisionModel = precision }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = mode.label,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selected) AccentPrimary else TextSecondary
-                                    )
+                                    Text(label, fontSize = 13.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (selected) TextPrimary else TextSecondary)
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = LineDivider)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Tepi", color = TextSecondary, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                EdgeRefinementMode.values().forEach { mode ->
+                                    val selected = edgeRefinementMode == mode
+                                    Box(
+                                        modifier = Modifier.clip(RoundedCornerShape(7.dp))
+                                            .background(if (selected) AccentSoft else SurfaceSubtle)
+                                            .clickable { edgeRefinementMode = mode }
+                                            .padding(horizontal = 9.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(mode.label, fontSize = 11.sp,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selected) AccentPrimary else TextSecondary)
+                                    }
                                 }
                             }
                         }
@@ -956,7 +931,7 @@ fun StudioScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Kuas perapi manual",
+                                text = "Kuas",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
@@ -969,7 +944,7 @@ fun StudioScreen(
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = if (isBrushTouchEnabled) "Kuas Aktif ✓" else "Aktifkan Kuas",
+                                    text = if (isBrushTouchEnabled) "Aktif" else "Gunakan",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isBrushTouchEnabled) Color.White else TextSecondary
@@ -1025,7 +1000,7 @@ fun StudioScreen(
                             coroutineScope.launch {
                                 isProcessing = true
                                 try {
-                                    val modelPath = activeModel?.localFilePath
+                                    val modelPath = activeModel?.takeIf { it.status == ModelStatus.INSTALLED }?.localFilePath
                                     if (!modelPath.isNullOrBlank()) {
                                         segmentationEngine.loadModel(modelPath)
                                     }
@@ -1048,8 +1023,8 @@ fun StudioScreen(
                                     showFullResultOnly = true
                                     currentAlert = UiAlert(
                                         kind = AlertKind.SUCCESS,
-                                        title = "Background berhasil dihapus!",
-                                        message = "Diproses dengan ${outcome.engineLabel} (${outcome.elapsedMs} ms). Hasil langsung siap disimpan di atas."
+                                        title = "Latar dihapus",
+                                        message = "${outcome.engineLabel} · ${outcome.elapsedMs} ms"
                                     )
                                 } catch (t: Throwable) {
                                     currentAlert = UiAlert(
