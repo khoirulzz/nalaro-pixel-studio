@@ -47,6 +47,9 @@ interface ModelDao {
     @Query("UPDATE ai_models SET status = :status, localFilePath = null, installedRevision = null, downloadProgress = 0.0 WHERE id = :id")
     suspend fun markUninstalled(id: String, status: ModelStatus = ModelStatus.NOT_INSTALLED)
 
+    @Query("DELETE FROM ai_models WHERE id NOT IN (:validIds) AND status != 'INSTALLED'")
+    suspend fun deleteExcept(validIds: List<String>)
+
     @Delete
     suspend fun delete(model: ModelEntity)
 }
