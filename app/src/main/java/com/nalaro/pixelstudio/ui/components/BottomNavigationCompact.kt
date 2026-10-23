@@ -32,7 +32,7 @@ fun BottomNavigationCompact(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = SurfaceRaised,
-        shadowElevation = 8.dp
+        shadowElevation = 0.dp
     ) {
         Column {
             HorizontalDivider(color = LineDivider, thickness = 1.dp)
@@ -40,7 +40,7 @@ fun BottomNavigationCompact(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(64.dp)
+                    .height(58.dp)
                     .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
@@ -53,7 +53,7 @@ fun BottomNavigationCompact(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .clickable { onTabSelected(tab) }
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -61,14 +61,14 @@ fun BottomNavigationCompact(
                             imageVector = tab.icon,
                             contentDescription = tab.label,
                             tint = tintColor,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(21.dp)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = tab.label,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             color = tintColor,
-                            style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelSmall
+                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal
                         )
                     }
                 }
