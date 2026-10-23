@@ -64,7 +64,7 @@ fun LibraryScreen(
     Scaffold(
         topBar = {
             TopAppBarCompact(
-                title = "Galeri Hasil (Library)",
+                title = "Galeri",
                 actions = {
                     IconButton(onClick = {
                         refreshLibrary()
