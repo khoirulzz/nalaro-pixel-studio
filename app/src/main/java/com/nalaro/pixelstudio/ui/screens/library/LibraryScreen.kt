@@ -126,7 +126,7 @@ fun LibraryScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "Lokasi Penyimpanan",
+                                    text = "Penyimpanan",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -144,7 +144,7 @@ fun LibraryScreen(
 
             item {
                 Text(
-                    text = "Hasil Ekspor (${exportedItems.size})",
+                    text = "Foto (${exportedItems.size})",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = TextPrimary
                 )
@@ -192,13 +192,13 @@ fun LibraryScreen(
                             }
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = "Belum Ada Gambar Tersimpan",
+                                text = "Belum ada foto",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Gambar yang kamu simpan dari Studio atau Batch Processing akan otomatis muncul di sini.",
+                                text = "Hasil ekspor akan tampil di sini.",
                                 fontSize = 13.sp,
                                 color = TextSecondary,
                                 textAlign = TextAlign.Center
@@ -211,7 +211,7 @@ fun LibraryScreen(
                             ) {
                                 Icon(Icons.Outlined.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Buka Studio Sekarang", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Buka Editor", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
